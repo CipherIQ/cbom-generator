@@ -1220,6 +1220,7 @@ static json_object* generate_tools_legacy_format(void) {
     json_object_object_add(tool, "vendor", json_object_new_string("Graziano Labs Corp."));
     json_object_object_add(tool, "name", json_object_new_string("CipherIQ"));
     json_object_object_add(tool, "version", json_object_new_string(CBOM_VERSION));
+    json_object_object_add(tool, "copyright", json_object_new_string("Copyright (c) 2025 Graziano Labs Corp. All rights reserved."));
 
     // External references
     json_object *ext_refs = create_tool_external_references();
@@ -1249,6 +1250,8 @@ static json_object* generate_tools_modern_format(void) {
     json_object_object_add(tool_component, "version", json_object_new_string(CBOM_VERSION));
     json_object_object_add(tool_component, "description",
         json_object_new_string("High-performance cryptographic asset scanner for Linux systems"));
+    json_object_object_add(tool_component, "copyright",
+        json_object_new_string("Copyright (c) 2025 Graziano Labs Corp. All rights reserved."));
 
     // External references
     json_object *ext_refs = create_tool_external_references();
