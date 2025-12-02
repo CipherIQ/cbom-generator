@@ -135,21 +135,51 @@ static int fs_scanner_file_callback(const file_info_t* file_info,
             char* soname = get_soname_cached(file_info->path);
             const char* lib_name = soname ? soname : file_info->path;
 
+            // v1.9.4: Filter non-crypto libraries BEFORE creating asset
+            // Previously, ALL .so/.a files were included, causing 85+ non-crypto
+            // libraries (Python modules, Lua, COBOL, etc.) to appear as "unknown"
+            // in the visualizer's crypto family chart.
+
+            // 1. Look up library in crypto registry
+            const crypto_library_info_t* reg_info = NULL;
+            if (soname) {
+                reg_info = find_crypto_lib_by_soname(soname);
+            }
+
+            // 2. Get library dependencies via ELF analysis
+            binary_crypto_profile_t* profile = analyze_binary_crypto(file_info->path);
+
+            // 3. Check if binary has crypto library dependencies
+            bool has_crypto_deps = false;
+            if (profile) {
+                for (size_t i = 0; i < profile->libs_count; i++) {
+                    if (profile->libs[i].is_crypto) {
+                        has_crypto_deps = true;
+                        break;
+                    }
+                }
+            }
+
+            // 4. Check path for crypto keywords
+            bool path_has_crypto = strstr(file_info->path, "ssl") ||
+                                   strstr(file_info->path, "crypto") ||
+                                   strstr(file_info->path, "tls") ||
+                                   strstr(file_info->path, "cert");
+
+            // Only create asset if library is crypto-related
+            if (!reg_info && !has_crypto_deps && !path_has_crypto) {
+                // Not a crypto library - skip it
+                if (profile) free_binary_crypto_profile(profile);
+                if (soname) free(soname);
+                return FS_SCAN_SUCCESS;
+            }
+
+            // Now create the asset for crypto-related library
             asset = crypto_asset_create(lib_name, ASSET_TYPE_LIBRARY);
             if (asset) {
                 asset->location = strdup(file_info->path);  // Keep full path for traceability
 
-                // v1.8.5: Full library profiling with registry lookup and dependency tracking
-                // 1. Look up library in crypto registry for cbom:lib:implements
-                const crypto_library_info_t* reg_info = NULL;
-                if (soname) {
-                    reg_info = find_crypto_lib_by_soname(soname);
-                }
-
-                // 2. Get library dependencies via ELF analysis
-                binary_crypto_profile_t* profile = analyze_binary_crypto(file_info->path);
-
-                // 3. Build comprehensive metadata with registry info and dependencies
+                // Build comprehensive metadata with registry info and dependencies
                 if (reg_info || profile) {
                     // Create detected_library_t for populate_library_metadata()
                     detected_library_t lib_info = {0};
@@ -164,20 +194,27 @@ static int fs_scanner_file_callback(const file_info_t* file_info,
                         if (reg_info->algorithms && reg_info->algorithms[0]) {
                             asset->algorithm = strdup(reg_info->algorithms[0]);
                         }
+                    } else if (has_crypto_deps && profile) {
+                        // v1.9.4: Library not in registry but has crypto dependencies
+                        // Infer crypto family from the primary crypto dependency
+                        for (size_t i = 0; i < profile->libs_count; i++) {
+                            if (profile->libs[i].is_crypto && profile->libs[i].crypto_lib_id) {
+                                lib_info.is_crypto = 1;
+                                lib_info.crypto_lib_id = profile->libs[i].crypto_lib_id;
+                                break;  // Use first crypto dependency as family
+                            }
+                        }
                     }
 
                     // Populate metadata (cbom:lib:implements, version, confidence)
-                    populate_library_metadata(asset, reg_info ? &lib_info : NULL, NULL);
+                    populate_library_metadata(asset, lib_info.is_crypto ? &lib_info : NULL, NULL);
 
                     // v1.9.3: Create algorithm components and PROVIDES relationships
-                    // Regression fix: v1.8.5 added populate_library_metadata() but forgot
-                    // to add create_library_algorithm_relationships() - this caused zero
-                    // algorithms and PROVIDES relationships in cross-arch mode
                     if (reg_info) {
                         create_library_algorithm_relationships(store, asset, &lib_info);
                     }
 
-                    // 4. Add dependency list to metadata_json
+                    // Add dependency list to metadata_json
                     if (profile && profile->libs_count > 0) {
                         // Parse existing metadata (if any)
                         struct json_object* meta = NULL;
@@ -207,18 +244,12 @@ static int fs_scanner_file_callback(const file_info_t* file_info,
                         }
                         json_object_put(meta);
                     }
-
-                    if (profile) {
-                        free_binary_crypto_profile(profile);
-                    }
-                } else {
-                    // Fallback: simple crypto detection by path
-                    if (strstr(file_info->path, "ssl") || strstr(file_info->path, "crypto") ||
-                        strstr(file_info->path, "tls")) {
-                        asset->algorithm = strdup("SSL/TLS");
-                    }
+                } else if (path_has_crypto) {
+                    // Fallback: crypto detected by path only
+                    asset->algorithm = strdup("SSL/TLS");
                 }
             }
+            if (profile) free_binary_crypto_profile(profile);
             if (soname) free(soname);
             break;
         }

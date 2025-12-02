@@ -5169,7 +5169,7 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                     
                     // Create algorithm component
                     json_object *algo_component = json_object_new_object();
-                    json_object_object_add(algo_component, "type", json_object_new_string("library"));
+                    json_object_object_add(algo_component, "type", json_object_new_string("cryptographic-asset"));
                     json_object_object_add(algo_component, "bom-ref", json_object_new_string(algo_id));
                     
                     // Algorithm name and version
