@@ -571,7 +571,7 @@ sudo ./cbom-generator \
 
 
 - **[Installation Guide](INSTALL.md)** - Complete installation instructions for end users
-- **[User Manual](USER_MANUAL.md)** - Comprehensive usage guide and CLI reference
+- Full CipherIQ **[documentation](https://www.cipheriq.io)** website with comprehensive usage guide and CLI reference
 
 ---
 
