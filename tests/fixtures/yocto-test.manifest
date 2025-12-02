@@ -1,0 +1,12 @@
+# Test Yocto manifest file for version_resolver unit tests
+# Format: PACKAGE_NAME ARCH VERSION
+openssl aarch64 3.0.13-r0
+libssl3 aarch64 3.0.13-r0
+libcrypto3 aarch64 3.0.13-r0
+gnutls aarch64 3.7.8-r0
+libgnutls30 aarch64 3.7.8-r0
+libgcrypt20 aarch64 1.10.1-r0
+libkrb5-3 aarch64 1.20.1-r0
+zlib aarch64 1.2.13-r0
+busybox aarch64 1.36.1-r0
+dropbear aarch64 2022.83-r0

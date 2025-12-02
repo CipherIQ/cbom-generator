@@ -1,0 +1,33 @@
+#ifndef CBOM_PROVENANCE_H
+#define CBOM_PROVENANCE_H
+
+// Build provenance metadata - automatically generated
+#define CBOM_VERSION "@PROJECT_VERSION@"
+#define CBOM_BUILD_TIMESTAMP "@CMAKE_TIMESTAMP@"
+#define CBOM_CMAKE_VERSION "@CMAKE_VERSION@"
+#define CBOM_C_COMPILER "@CMAKE_C_COMPILER@"
+#define CBOM_C_COMPILER_VERSION "@CMAKE_C_COMPILER_VERSION@"
+#define CBOM_BUILD_TYPE "@CMAKE_BUILD_TYPE@"
+
+// Dependency versions (pinned for reproducibility)
+#define CBOM_OPENSSL_VERSION "@CBOM_OPENSSL_VER@"
+#define CBOM_CURL_VERSION "@CURL_VERSION_STRING@"
+#define CBOM_JSON_C_VERSION "@JSON_C_VERSION@"
+
+// Build flags
+#define CBOM_C_FLAGS "@CMAKE_C_FLAGS@"
+#define CBOM_EXE_LINKER_FLAGS "@CMAKE_EXE_LINKER_FLAGS@"
+
+// Source directory (for reproducible builds)
+#define CBOM_SOURCE_DIR "@CMAKE_SOURCE_DIR@"
+
+// Git information (if available)
+#define CBOM_GIT_COMMIT "@GIT_COMMIT_HASH@"
+#define CBOM_GIT_BRANCH "@GIT_BRANCH@"
+#define CBOM_GIT_DIRTY "@GIT_DIRTY@"
+
+// Host information
+#define CBOM_BUILD_HOST "@CMAKE_HOST_SYSTEM@"
+#define CBOM_BUILD_PROCESSOR "@CMAKE_HOST_SYSTEM_PROCESSOR@"
+
+#endif // CBOM_PROVENANCE_H

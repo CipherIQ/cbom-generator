@@ -1,0 +1,18 @@
+CBOM Generator v1.3 - Performance Baseline
+Generated: Mon Nov 17 06:12:37 PM PST 2025
+
+Benchmark Results:
+==================
+
+1. Plugin Loading (50 plugins):    3ms  (target: <500ms)
+2. Certificate Scanning:            0s     (target: <5s)
+3. Service Discovery:               0s     (target: <2s)
+4. Memory Usage:                    33MB    (target: <512MB)
+5. Full Scan + Output:              0s     (target: <10s)
+
+Output Size: 1.1M
+
+System Info:
+CPU Cores: 32
+Total RAM: 125Gi
+Kernel: 6.5.0-1024-oem
