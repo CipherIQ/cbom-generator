@@ -734,3 +734,253 @@ pqc_category_t classify_library_by_algorithms(
 
     return worst_category;
 }
+
+// === Alternate Detection Algorithm Classification (v1.9.0) ===
+
+// Normalization mapping: kernel crypto API patterns -> standard names
+static const struct { const char* pattern; const char* standard; } kernel_norm_map[] = {
+    // AES modes (kernel format) - assume 256-bit for GCM/XTS, 128-bit for others
+    {"gcm(aes)",   "AES-256-GCM"},
+    {"xts(aes)",   "AES-256-XTS"},
+    {"cbc(aes)",   "AES-128-CBC"},
+    {"ctr(aes)",   "AES-128-CTR"},
+    {"ecb(aes)",   "AES-128-ECB"},
+    {"ccm(aes)",   "AES-128-CCM"},
+    // Hash functions
+    {"sha256",     "SHA-256"},
+    {"sha384",     "SHA-384"},
+    {"sha512",     "SHA-512"},
+    {"sha1",       "SHA-1"},
+    {"md5",        "MD5"},
+    // HMAC variants
+    {"hmac(sha256)", "HMAC-SHA256"},
+    {"hmac(sha512)", "HMAC-SHA512"},
+    // Asymmetric
+    {"rsa",        "RSA"},
+    {"ecdsa",      "ECDSA"},
+    // RNG
+    {"drbg_nopr_sha256", "DRBG-SHA256"},
+    {NULL, NULL}
+};
+
+// Normalization mapping: Go crypto packages -> standard names
+static const struct { const char* pattern; const char* standard; } go_norm_map[] = {
+    {"crypto/aes",    "AES"},
+    {"crypto/rsa",    "RSA"},
+    {"crypto/ecdsa",  "ECDSA"},
+    {"crypto/sha256", "SHA-256"},
+    {"crypto/sha512", "SHA-512"},
+    {"crypto/tls",    "TLS-1.2"},
+    {"crypto/cipher", "AES"},
+    {"crypto/hmac",   "HMAC-SHA256"},
+    {"crypto/x509",   "RSA"},
+    {"crypto/rand",   "DRBG"},
+    {"golang.org/x/crypto", "CHACHA20-POLY1305"},
+    {NULL, NULL}
+};
+
+// Normalization mapping: Rust crate patterns -> standard names
+static const struct { const char* pattern; const char* standard; } rust_norm_map[] = {
+    {"ring::",             "AES-256-GCM"},
+    {"rustls::",           "TLS-1.3"},
+    {"aes_gcm::",          "AES-256-GCM"},
+    {"chacha20poly1305::", "CHACHA20-POLY1305"},
+    {"x25519_dalek::",     "X25519"},
+    {"ed25519_dalek::",    "ED25519"},
+    {NULL, NULL}
+};
+
+// Normalization mapping: embedded symbol patterns -> standard names
+static const struct { const char* pattern; const char* standard; } symbol_norm_map[] = {
+    {"AES_encrypt",        "AES"},
+    {"AES_decrypt",        "AES"},
+    {"AES_set_encrypt_key","AES"},
+    {"AES_set_decrypt_key","AES"},
+    {"SHA256_Init",        "SHA-256"},
+    {"SHA256_Update",      "SHA-256"},
+    {"SHA256_Final",       "SHA-256"},
+    {"SHA512_Init",        "SHA-512"},
+    {"SHA512_Update",      "SHA-512"},
+    {"SHA512_Final",       "SHA-512"},
+    {"SHA1_Init",          "SHA-1"},
+    {"SHA1_Update",        "SHA-1"},
+    {"SHA1_Final",         "SHA-1"},
+    {"MD5_Init",           "MD5"},
+    {"MD5_Update",         "MD5"},
+    {"MD5_Final",          "MD5"},
+    {"EVP_EncryptInit",    "AES"},
+    {"EVP_DecryptInit",    "AES"},
+    {"EVP_DigestInit",     "SHA-256"},
+    {"EVP_CIPHER_CTX_new", "AES"},
+    {"EVP_MD_CTX_new",     "SHA-256"},
+    {"OPENSSL_init_crypto","AES"},
+    {"gcry_cipher_open",   "AES"},
+    {"gcry_md_open",       "SHA-256"},
+    {"gcry_pk_encrypt",    "RSA"},
+    {"nettle_aes_encrypt", "AES"},
+    {"nettle_sha256_digest","SHA-256"},
+    {NULL, NULL}
+};
+
+// Note: contains_ignorecase() is defined earlier in this file (line 28)
+
+bool pqc_normalize_alternate_algorithm(
+    const char* raw_name,
+    char* normalized,
+    size_t norm_size
+) {
+    if (!raw_name || !normalized || norm_size == 0) return false;
+    normalized[0] = '\0';
+
+    // Try kernel patterns first (exact case-insensitive match)
+    for (size_t i = 0; kernel_norm_map[i].pattern != NULL; i++) {
+        if (strcasecmp(raw_name, kernel_norm_map[i].pattern) == 0) {
+            strncpy(normalized, kernel_norm_map[i].standard, norm_size - 1);
+            normalized[norm_size - 1] = '\0';
+            return true;
+        }
+    }
+
+    // Try Go patterns (substring match)
+    for (size_t i = 0; go_norm_map[i].pattern != NULL; i++) {
+        if (contains_ignorecase(raw_name, go_norm_map[i].pattern)) {
+            strncpy(normalized, go_norm_map[i].standard, norm_size - 1);
+            normalized[norm_size - 1] = '\0';
+            return true;
+        }
+    }
+
+    // Try Rust patterns (substring match)
+    for (size_t i = 0; rust_norm_map[i].pattern != NULL; i++) {
+        if (contains_ignorecase(raw_name, rust_norm_map[i].pattern)) {
+            strncpy(normalized, rust_norm_map[i].standard, norm_size - 1);
+            normalized[norm_size - 1] = '\0';
+            return true;
+        }
+    }
+
+    // Try symbol patterns (exact case-insensitive match)
+    for (size_t i = 0; symbol_norm_map[i].pattern != NULL; i++) {
+        if (strcasecmp(raw_name, symbol_norm_map[i].pattern) == 0) {
+            strncpy(normalized, symbol_norm_map[i].standard, norm_size - 1);
+            normalized[norm_size - 1] = '\0';
+            return true;
+        }
+    }
+
+    return false;  // Unknown pattern
+}
+
+pqc_category_t classify_app_from_alternate_detection(
+    const char** algorithms,
+    size_t count,
+    const char* detection_type,
+    char* rationale_out,
+    size_t rationale_size
+) {
+    if (!algorithms || count == 0) {
+        if (rationale_out && rationale_size > 0) {
+            snprintf(rationale_out, rationale_size,
+                "No algorithms detected via %s; status uncertain",
+                detection_type ? detection_type : "unknown method");
+        }
+        return PQC_UNKNOWN;
+    }
+
+    pqc_category_t worst_category = PQC_SAFE;  // Start optimistic
+    const char* worst_algo = NULL;
+    char worst_normalized[64] = {0};
+
+    int safe_count = 0, trans_count = 0, dep_count = 0, unsafe_count = 0;
+
+    for (size_t i = 0; i < count && algorithms[i]; i++) {
+        char normalized[64];
+        const char* algo_to_classify;
+
+        // Try to normalize the algorithm name
+        if (pqc_normalize_alternate_algorithm(algorithms[i], normalized, sizeof(normalized))) {
+            algo_to_classify = normalized;
+        } else {
+            // Unknown pattern - try classifying raw name directly
+            algo_to_classify = algorithms[i];
+        }
+
+        // Get primitive type for classification
+        crypto_primitive_t primitive = algorithm_get_primitive_type(algo_to_classify);
+
+        // Classify with conservative key size assumptions:
+        // - For asymmetric: assume 2048 (TRANSITIONAL minimum)
+        // - For symmetric: assume 256 for GCM/XTS, 128 otherwise
+        // - For hash: assume 256
+        int assumed_key_size = 0;
+        if (primitive == PRIMITIVE_ASYMMETRIC_CIPHER ||
+            primitive == PRIMITIVE_SIGNATURE ||
+            primitive == PRIMITIVE_KEY_EXCHANGE) {
+            assumed_key_size = 2048;  // Conservative RSA assumption
+        } else if (primitive == PRIMITIVE_SYMMETRIC_CIPHER) {
+            // Check for 256-bit indicators
+            if (strstr(algo_to_classify, "256") ||
+                strstr(algo_to_classify, "GCM") ||
+                strstr(algo_to_classify, "XTS") ||
+                strstr(algo_to_classify, "CHACHA20")) {
+                assumed_key_size = 256;
+            } else {
+                assumed_key_size = 128;
+            }
+        } else if (primitive == PRIMITIVE_HASH_FUNCTION) {
+            assumed_key_size = 256;  // SHA-256 assumption
+        }
+
+        pqc_category_t cat = classify_algorithm_pqc_safety(
+            algo_to_classify, assumed_key_size, primitive);
+
+        // Track counts
+        switch (cat) {
+            case PQC_SAFE: safe_count++; break;
+            case PQC_TRANSITIONAL: trans_count++; break;
+            case PQC_DEPRECATED: dep_count++; break;
+            case PQC_UNSAFE: unsafe_count++; break;
+            default: break;
+        }
+
+        // Track worst case (higher enum = worse)
+        if (cat != PQC_UNKNOWN && (int)cat > (int)worst_category) {
+            worst_category = cat;
+            worst_algo = algorithms[i];
+            snprintf(worst_normalized, sizeof(worst_normalized), "%s", algo_to_classify);
+        }
+    }
+
+    // Build rationale
+    if (rationale_out && rationale_size > 0) {
+        const char* method = detection_type ? detection_type : "detection";
+
+        if (worst_category == PQC_SAFE) {
+            snprintf(rationale_out, rationale_size,
+                "All %zu algorithms via %s are quantum-resistant (hash/symmetric)",
+                count, method);
+        } else if (worst_category == PQC_TRANSITIONAL) {
+            snprintf(rationale_out, rationale_size,
+                "Detected %s via %s (%s); quantum-vulnerable but classically strong",
+                worst_algo ? worst_algo : "algorithm",
+                method,
+                worst_normalized[0] ? worst_normalized : "normalized");
+        } else if (worst_category == PQC_DEPRECATED) {
+            snprintf(rationale_out, rationale_size,
+                "Detected deprecated %s via %s; immediate migration recommended",
+                worst_algo ? worst_algo : "algorithm",
+                method);
+        } else if (worst_category == PQC_UNSAFE) {
+            snprintf(rationale_out, rationale_size,
+                "Detected unsafe %s via %s; urgent migration required",
+                worst_algo ? worst_algo : "algorithm",
+                method);
+        } else {
+            snprintf(rationale_out, rationale_size,
+                "Unable to classify %zu algorithms from %s",
+                count, method);
+        }
+    }
+
+    return worst_category;
+}

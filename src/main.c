@@ -4846,6 +4846,55 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                 }
             }
 
+            // v1.9.0: Assess applications from alternate detection algorithms
+            // This path handles KERNEL_CRYPTO_API, STATIC_LINKED, SYMBOL_ANALYSIS detection methods
+            char alt_rationale_buf[256] = {0};
+            bool app_classified_from_alternate = false;
+            if ((asset->type == ASSET_TYPE_APPLICATION || asset->type == ASSET_TYPE_SERVICE) &&
+                category == PQC_UNKNOWN && !app_classified_from_deps && asset->metadata_json) {
+                // Parse metadata to find alternate_algorithms
+                json_object* metadata = json_tokener_parse(asset->metadata_json);
+                if (metadata) {
+                    json_object* alt_algos_obj = NULL;
+                    json_object* method_obj = NULL;
+                    const char* det_method = "detection";
+
+                    if (json_object_object_get_ex(metadata, "detection_method", &method_obj)) {
+                        const char* m = json_object_get_string(method_obj);
+                        if (m && (strcmp(m, "KERNEL_CRYPTO_API") == 0 ||
+                                  strcmp(m, "STATIC_LINKED") == 0 ||
+                                  strcmp(m, "SYMBOL_ANALYSIS") == 0)) {
+                            det_method = m;
+                        }
+                    }
+
+                    if (json_object_object_get_ex(metadata, "alternate_algorithms", &alt_algos_obj)) {
+                        int arr_len = json_object_array_length(alt_algos_obj);
+                        if (arr_len > 0) {
+                            const char** algos = calloc(arr_len, sizeof(char*));
+                            if (algos) {
+                                for (int j = 0; j < arr_len; j++) {
+                                    json_object* item = json_object_array_get_idx(alt_algos_obj, j);
+                                    algos[j] = json_object_get_string(item);
+                                }
+
+                                pqc_category_t alt_category = classify_app_from_alternate_detection(
+                                    algos, arr_len, det_method,
+                                    alt_rationale_buf, sizeof(alt_rationale_buf));
+
+                                if (alt_category != PQC_UNKNOWN) {
+                                    category = alt_category;
+                                    app_classified_from_alternate = true;
+                                }
+
+                                free(algos);
+                            }
+                        }
+                    }
+                    json_object_put(metadata);
+                }
+            }
+
             // Conservative fallback: UNKNOWN → UNSAFE (matches old behavior)
             // EXCEPT for services/applications/libraries - mark as TRANSITIONAL pending dependency analysis
             if (category == PQC_UNKNOWN) {
@@ -4959,6 +5008,9 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                                 "Inherits PQC-safe status from crypto library dependencies");
                         }
                         rationale = app_rationale_buf;
+                    } else if ((asset->type == ASSET_TYPE_SERVICE || asset->type == ASSET_TYPE_APPLICATION) && app_classified_from_alternate) {
+                        // v1.9.0: Classified from alternate detection (kernel crypto, static linking, symbols)
+                        rationale = alt_rationale_buf;
                     } else {
                         rationale = "Quantum-resistant algorithm or sufficient symmetric key length";
                     }
@@ -4995,6 +5047,9 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                                 "Inherits TRANSITIONAL status from crypto library dependencies; plan PQC migration");
                         }
                         rationale = app_rationale_buf;
+                    } else if ((asset->type == ASSET_TYPE_SERVICE || asset->type == ASSET_TYPE_APPLICATION) && app_classified_from_alternate) {
+                        // v1.9.0: Classified from alternate detection (kernel crypto, static linking, symbols)
+                        rationale = alt_rationale_buf;
                     } else if (asset->type == ASSET_TYPE_SERVICE || asset->type == ASSET_TYPE_APPLICATION) {
                         rationale = "No crypto library dependencies detected; status pending further analysis";
                     } else if (asset->type == ASSET_TYPE_LIBRARY) {
@@ -5025,6 +5080,9 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                                 "Inherits DEPRECATED status from crypto library dependencies; immediate replacement required");
                         }
                         rationale = app_rationale_buf;
+                    } else if ((asset->type == ASSET_TYPE_SERVICE || asset->type == ASSET_TYPE_APPLICATION) && app_classified_from_alternate) {
+                        // v1.9.0: Classified from alternate detection (kernel crypto, static linking, symbols)
+                        rationale = alt_rationale_buf;
                     } else {
                         rationale = "Weak or broken algorithm; immediate replacement required";
                     }

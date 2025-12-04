@@ -302,6 +302,55 @@ pqc_category_t classify_library_by_algorithms(
     size_t rationale_size
 );
 
+// === Alternate Detection Algorithm Classification (v1.9.0) ===
+
+/**
+ * Normalize algorithm name from alternate detection methods.
+ *
+ * Handles detection patterns from:
+ * - Kernel Crypto API: "gcm(aes)" → "AES-256-GCM", "sha256" → "SHA-256"
+ * - Go crypto packages: "crypto/aes" → "AES", "crypto/rsa" → "RSA"
+ * - Rust crates: "ring::" → "AES-256-GCM", "rustls::" → "TLS-1.3"
+ * - Embedded symbols: "SHA256_Init" → "SHA-256", "AES_encrypt" → "AES"
+ *
+ * @param raw_name    Raw algorithm name from detection
+ * @param normalized  Output buffer for normalized name
+ * @param norm_size   Size of output buffer (min 64 bytes recommended)
+ * @return true if successfully normalized, false if unknown pattern
+ */
+bool pqc_normalize_alternate_algorithm(
+    const char* raw_name,
+    char* normalized,
+    size_t norm_size
+);
+
+/**
+ * Classify application PQC status from alternate detection algorithms.
+ *
+ * Uses WORST-case classification (most vulnerable algorithm determines status).
+ *
+ * Classification rules:
+ * - Hash functions (SHA-256, SHA-512): PQC_SAFE (quantum-resistant)
+ * - Symmetric 256-bit (AES-256-GCM): PQC_SAFE
+ * - Symmetric 128-bit (AES-128-CBC): PQC_TRANSITIONAL
+ * - Asymmetric (RSA, ECDSA): PQC_TRANSITIONAL
+ * - Deprecated (MD5, SHA-1, DES): PQC_DEPRECATED
+ *
+ * @param algorithms     Array of algorithm names (raw from detection)
+ * @param count          Number of algorithms
+ * @param detection_type Detection method: "KERNEL_CRYPTO_API", "STATIC_LINKED", "SYMBOL_ANALYSIS"
+ * @param rationale_out  Output buffer for rationale string
+ * @param rationale_size Size of rationale buffer (min 256 bytes recommended)
+ * @return PQC category based on WORST detected algorithm
+ */
+pqc_category_t classify_app_from_alternate_detection(
+    const char** algorithms,
+    size_t count,
+    const char* detection_type,
+    char* rationale_out,
+    size_t rationale_size
+);
+
 #ifdef __cplusplus
 }
 #endif

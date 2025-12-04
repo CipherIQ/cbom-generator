@@ -546,8 +546,10 @@ static int scan_directory_for_applications(const char* dir_path, asset_store_t* 
         }
 
         // v1.8.2: Enhanced crypto detection - check for kernel crypto API, static linking, and embedded symbols
+        // v1.9.0: Store algorithm info for PQC classification before freeing
         const char* alternate_detection_method = NULL;
         bool has_alternate_crypto = false;
+        char* alternate_algorithms_json = NULL;  // Store algorithms for PQC classification
 
         if (crypto_count == 0 && profile->embedded_providers_count == 0) {
             // No dynamic crypto libraries found - check for other crypto patterns
@@ -558,12 +560,45 @@ static int scan_directory_for_applications(const char* dir_path, asset_store_t* 
             if (detect_kernel_crypto_usage(full_path, &kinfo)) {
                 has_alternate_crypto = true;
                 alternate_detection_method = "KERNEL_CRYPTO_API";
+                // v1.9.0: Serialize algorithms to JSON for PQC classification
+                if (kinfo.algorithm_count > 0 && kinfo.algorithms) {
+                    struct json_object* arr = json_object_new_array();
+                    for (size_t j = 0; j < kinfo.algorithm_count; j++) {
+                        if (kinfo.algorithms[j]) {
+                            json_object_array_add(arr, json_object_new_string(kinfo.algorithms[j]));
+                        }
+                    }
+                    alternate_algorithms_json = strdup(json_object_to_json_string(arr));
+                    json_object_put(arr);
+                }
             } else if (detect_static_crypto(full_path, &sinfo)) {
                 has_alternate_crypto = true;
                 alternate_detection_method = "STATIC_LINKED";
+                // v1.9.0: Serialize packages to JSON for PQC classification
+                if (sinfo.package_count > 0 && sinfo.packages) {
+                    struct json_object* arr = json_object_new_array();
+                    for (size_t j = 0; j < sinfo.package_count; j++) {
+                        if (sinfo.packages[j]) {
+                            json_object_array_add(arr, json_object_new_string(sinfo.packages[j]));
+                        }
+                    }
+                    alternate_algorithms_json = strdup(json_object_to_json_string(arr));
+                    json_object_put(arr);
+                }
             } else if (detect_embedded_crypto_symbols(full_path, &einfo)) {
                 has_alternate_crypto = true;
                 alternate_detection_method = "SYMBOL_ANALYSIS";
+                // v1.9.0: Serialize symbols to JSON for PQC classification
+                if (einfo.symbol_count > 0 && einfo.symbols) {
+                    struct json_object* arr = json_object_new_array();
+                    for (size_t j = 0; j < einfo.symbol_count; j++) {
+                        if (einfo.symbols[j]) {
+                            json_object_array_add(arr, json_object_new_string(einfo.symbols[j]));
+                        }
+                    }
+                    alternate_algorithms_json = strdup(json_object_to_json_string(arr));
+                    json_object_put(arr);
+                }
             }
 
             kernel_crypto_info_free(&kinfo);
@@ -658,6 +693,16 @@ static int scan_directory_for_applications(const char* dir_path, asset_store_t* 
                 json_object_array_add(providers_arr, provider_obj);
             }
             json_object_object_add(metadata_root, "embedded_crypto_providers", providers_arr);
+        }
+
+        // v1.9.0: Add alternate detection algorithms for PQC classification
+        if (alternate_algorithms_json) {
+            struct json_object* algos = json_tokener_parse(alternate_algorithms_json);
+            if (algos) {
+                json_object_object_add(metadata_root, "alternate_algorithms", algos);
+            }
+            free(alternate_algorithms_json);
+            alternate_algorithms_json = NULL;
         }
 
         const char* metadata_str = json_object_to_json_string_ext(metadata_root, JSON_C_TO_STRING_PLAIN);
@@ -863,7 +908,9 @@ static int binary_analysis_worker(void* data, void* context) {
     }
 
     // v1.8.4: Track alternate detection method for kernel crypto/static linking
+    // v1.9.0: Store algorithm info for PQC classification before freeing
     const char* alternate_detection_method = NULL;
+    char* alternate_algorithms_json = NULL;  // Store algorithms for PQC classification
 
     if (crypto_count == 0 && profile->embedded_providers_count == 0) {
         // v1.8.4: Try kernel crypto/static linking detection before skipping
@@ -876,12 +923,45 @@ static int binary_analysis_worker(void* data, void* context) {
         if (detect_kernel_crypto_usage(work->binary_path, &kinfo)) {
             has_other_crypto = true;
             alternate_detection_method = "KERNEL_CRYPTO_API";
+            // v1.9.0: Serialize algorithms to JSON for PQC classification
+            if (kinfo.algorithm_count > 0 && kinfo.algorithms) {
+                struct json_object* arr = json_object_new_array();
+                for (size_t j = 0; j < kinfo.algorithm_count; j++) {
+                    if (kinfo.algorithms[j]) {
+                        json_object_array_add(arr, json_object_new_string(kinfo.algorithms[j]));
+                    }
+                }
+                alternate_algorithms_json = strdup(json_object_to_json_string(arr));
+                json_object_put(arr);
+            }
         } else if (detect_static_crypto(work->binary_path, &sinfo)) {
             has_other_crypto = true;
             alternate_detection_method = "STATIC_LINKED";
+            // v1.9.0: Serialize packages to JSON for PQC classification
+            if (sinfo.package_count > 0 && sinfo.packages) {
+                struct json_object* arr = json_object_new_array();
+                for (size_t j = 0; j < sinfo.package_count; j++) {
+                    if (sinfo.packages[j]) {
+                        json_object_array_add(arr, json_object_new_string(sinfo.packages[j]));
+                    }
+                }
+                alternate_algorithms_json = strdup(json_object_to_json_string(arr));
+                json_object_put(arr);
+            }
         } else if (detect_embedded_crypto_symbols(work->binary_path, &einfo)) {
             has_other_crypto = true;
             alternate_detection_method = "SYMBOL_ANALYSIS";
+            // v1.9.0: Serialize symbols to JSON for PQC classification
+            if (einfo.symbol_count > 0 && einfo.symbols) {
+                struct json_object* arr = json_object_new_array();
+                for (size_t j = 0; j < einfo.symbol_count; j++) {
+                    if (einfo.symbols[j]) {
+                        json_object_array_add(arr, json_object_new_string(einfo.symbols[j]));
+                    }
+                }
+                alternate_algorithms_json = strdup(json_object_to_json_string(arr));
+                json_object_put(arr);
+            }
         }
 
         // Clean up detection info structures
@@ -981,6 +1061,16 @@ static int binary_analysis_worker(void* data, void* context) {
             json_object_array_add(providers_arr, provider_obj);
         }
         json_object_object_add(metadata_root, "embedded_crypto_providers", providers_arr);
+    }
+
+    // v1.9.0: Add alternate detection algorithms for PQC classification
+    if (alternate_algorithms_json) {
+        struct json_object* algos = json_tokener_parse(alternate_algorithms_json);
+        if (algos) {
+            json_object_object_add(metadata_root, "alternate_algorithms", algos);
+        }
+        free(alternate_algorithms_json);
+        alternate_algorithms_json = NULL;
     }
 
     const char* metadata_str = json_object_to_json_string_ext(metadata_root, JSON_C_TO_STRING_PLAIN);
