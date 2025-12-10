@@ -6442,8 +6442,8 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
         float readiness_score = 0.0f;
         if (total_classified > 0) {
             readiness_score = ((safe_count * 100.0f) +
-                              (transitional_count * 50.0f) +
-                              (deprecated_count * 0.0f) +
+                              (transitional_count * 60.0f) +
+                              (deprecated_count * 20.0f) +
                               (unsafe_count * 0.0f)) / total_classified;
         }
 
