@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cbom-generator VERSION 1.9.3 LANGUAGES C)
+project(cbom-generator VERSION 1.9.4 LANGUAGES C)
 
 # Set C11 standard
 set(CMAKE_C_STANDARD 11)
