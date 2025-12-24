@@ -20,6 +20,7 @@
 #include "asset_store.h"
 #include "cbom_types.h"
 #include "plugin_manager.h"
+#include "service_scanner.h"  // v1.9.2: For get_or_create_algorithm_asset
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -649,34 +650,20 @@ int scan_apt_packages(package_scanner_context_t* context) {
                                 const char* algo_name = metadata->implemented_algorithms[alg_idx];
                                 if (!algo_name || strlen(algo_name) == 0) continue;
 
-                                // Generate algorithm bom-ref (v1.5: use algo: prefix for consistency)
-                                char algo_ref[128];
-                                snprintf(algo_ref, sizeof(algo_ref), "algo:%s", algo_name);
-                                // Lowercase (after prefix)
-                                for (char* p = algo_ref + 5; *p; p++) {  // Skip "algo:" prefix
-                                    *p = tolower(*p);
-                                }
-
-                                // v1.5: Create algorithm component if it doesn't exist
-                                crypto_asset_t* algo_asset = malloc(sizeof(crypto_asset_t));
-                                if (algo_asset) {
-                                    memset(algo_asset, 0, sizeof(crypto_asset_t));
-                                    algo_asset->type = ASSET_TYPE_ALGORITHM;
-                                    algo_asset->name = strdup(algo_name);
-                                    algo_asset->id = strdup(algo_ref);  // Use algo: bom-ref as ID
-                                    algo_asset->algorithm = strdup(algo_name);
-
-                                    // Try to add (will be deduplicated if already exists)
-                                    asset_store_add(context->asset_store, algo_asset);
-                                }
+                                // v1.9.2: Use standardized algorithm creation (prevents duplicates)
+                                crypto_asset_t* algo_asset = get_or_create_algorithm_asset(
+                                    context->asset_store, algo_name, 0);
 
                                 // Create PROVIDES relationship from library to algorithm
-                                relationship_t* provides_rel = relationship_create(
-                                    RELATIONSHIP_PROVIDES,
-                                    asset->id,      // From: library
-                                    algo_ref,       // To: algorithm (by bom-ref)
-                                    0.85            // Confidence
-                                );
+                                relationship_t* provides_rel = NULL;
+                                if (algo_asset) {
+                                    provides_rel = relationship_create(
+                                        RELATIONSHIP_PROVIDES,
+                                        asset->id,         // From: library
+                                        algo_asset->id,    // To: algorithm (canonical ID)
+                                        0.85               // Confidence
+                                    );
+                                }
 
                                 if (provides_rel) {
                                     asset_store_add_relationship(context->asset_store, provides_rel);

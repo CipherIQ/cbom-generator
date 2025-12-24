@@ -383,6 +383,13 @@ char** generate_service_pqc_recommendations(const char* service_id,
 // Algorithm decomposition (Phase 8 completeness tweaks)
 struct crypto_asset* create_algorithm_asset_from_components(const char* algorithm_name,
                                                             int key_size);
+
+// v1.9.2: Get existing algorithm or create new one (prevents duplicates)
+// Returns existing asset if found, or creates new one and adds to store
+struct crypto_asset* get_or_create_algorithm_asset(struct asset_store* store,
+                                                   const char* algorithm_name,
+                                                   int key_size);
+
 int decompose_cipher_suite_to_algorithms(struct asset_store* store,
                                          const char* suite_id,
                                          const char* kex,

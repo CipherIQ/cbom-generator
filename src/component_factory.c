@@ -694,6 +694,10 @@ int component_factory_process_service(
         static const char* DEFAULT_TLS13_CIPHERS = "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256";
         static const char* DEFAULT_TLS12_CIPHERS = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256";
 
+        // v1.9.2: Track created cipher suites to avoid duplicates across protocol versions
+        // Key: cipher suite name, Value: asset ID string
+        json_object* created_cipher_suites = json_object_new_object();
+
         // For each TLS version, create its cipher suites
         for (int v = 0; v < protocol_id_count; v++) {
             const char* protocol_id = protocol_ids[v];
@@ -728,30 +732,55 @@ int component_factory_process_service(
                 // Note: Cipher suite filtering by TLS version handled by parser
                 // parse_cipher_list_to_suites() already filters based on tls_version parameter
 
-                crypto_asset_t* suite_asset = cipher_suite_create_asset(suites[j]);
-                if (suite_asset) {
-                    result = asset_store_add(store, suite_asset);
-                    if (result == 0 || result == 1) {
-                        // Create PROTOCOL → CIPHER_SUITE relationship
-                        create_protocol_suite_relationship(store, protocol_id, suite_asset->id, 0.95);
+                const char* suite_name = suites[j]->name;
+                const char* existing_id = NULL;
 
-                        // Decompose cipher suite to algorithms (SUITE→ALGORITHM relationships)
-                        decompose_cipher_suite_to_algorithms(store,
-                            suite_asset->id,
-                            suites[j]->kex_algorithm,
-                            suites[j]->auth_algorithm,
-                            suites[j]->encryption_algorithm,
-                            suites[j]->mac_algorithm
-                        );
-                    } else {
-                        crypto_asset_destroy(suite_asset);
+                // v1.9.2: Check if this cipher suite was already created
+                json_object* existing_obj = NULL;
+                if (json_object_object_get_ex(created_cipher_suites, suite_name, &existing_obj)) {
+                    existing_id = json_object_get_string(existing_obj);
+                }
+
+                if (!existing_id) {
+                    // First time seeing this cipher suite - create it
+                    crypto_asset_t* suite_asset = cipher_suite_create_asset(suites[j]);
+                    if (suite_asset) {
+                        result = asset_store_add(store, suite_asset);
+                        if (result == 0 || result == 1) {
+                            existing_id = suite_asset->id;
+                            // Track this cipher suite for future protocol versions
+                            json_object_object_add(created_cipher_suites, suite_name,
+                                                  json_object_new_string(suite_asset->id));
+
+                            // Decompose cipher suite to algorithms ONLY ONCE
+                            // (not per protocol version)
+                            decompose_cipher_suite_to_algorithms(store,
+                                suite_asset->id,
+                                suites[j]->kex_algorithm,
+                                suites[j]->auth_algorithm,
+                                suites[j]->encryption_algorithm,
+                                suites[j]->mac_algorithm
+                            );
+                        } else {
+                            crypto_asset_destroy(suite_asset);
+                        }
                     }
                 }
+
+                // ALWAYS create PROTOCOL → CIPHER_SUITE relationship
+                // (each protocol version gets its own relationship to the same cipher suite)
+                if (existing_id) {
+                    create_protocol_suite_relationship(store, protocol_id, existing_id, 0.95);
+                }
+
                 // Free suite metadata
                 cipher_suite_metadata_destroy(suites[j]);
             }
             free(suites);
         }
+
+        // Cleanup tracking object
+        json_object_put(created_cipher_suites);
     }
 
     // Cleanup protocol IDs array

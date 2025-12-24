@@ -726,26 +726,10 @@ int scan_user_ssh_configs(service_scanner_context_t* context) {
                     for (size_t i = 0; i < ssh_user_protocol->kex_count; i++) {
                         const char* kex_name = ssh_user_protocol->supported_kex[i];
 
-                        // Create algorithm component for KEX algorithm
-                        crypto_asset_t* kex_algo = crypto_asset_create(kex_name, ASSET_TYPE_ALGORITHM);
+                        // v1.9.2: Use get_or_create to prevent duplicate algorithms
+                        crypto_asset_t* kex_algo = get_or_create_algorithm_asset(
+                            context->asset_store, kex_name, 0);
                         if (kex_algo) {
-                            kex_algo->location = strdup(privacy_path);
-                            kex_algo->algorithm = strdup(kex_name);
-
-                            // Populate metadata_json with CycloneDX algorithmProperties
-                            char* metadata = algorithm_populate_cdx_metadata(
-                                kex_algo->metadata_json,
-                                kex_name,
-                                ALGO_CONTEXT_CIPHER_SUITE
-                            );
-                            if (metadata) {
-                                if (kex_algo->metadata_json) free(kex_algo->metadata_json);
-                                kex_algo->metadata_json = metadata;
-                            }
-
-                            // Add to asset store
-                            asset_store_add(context->asset_store, kex_algo);
-
                             // Create PROTOCOL → ALGORITHM relationship
                             relationship_t* rel = relationship_create(
                                 RELATIONSHIP_USES,
@@ -2103,26 +2087,10 @@ int detect_openssh_service(service_scanner_context_t* context) {
                                                 }
 
                                                 if (strlen(token) > 0) {
-                                                    // Create algorithm component for KEX algorithm
-                                                    crypto_asset_t* kex_algo = crypto_asset_create(token, ASSET_TYPE_ALGORITHM);
+                                                    // v1.9.2: Use get_or_create to prevent duplicate algorithms
+                                                    crypto_asset_t* kex_algo = get_or_create_algorithm_asset(
+                                                        context->asset_store, token, 0);
                                                     if (kex_algo) {
-                                                        kex_algo->location = strdup(config_path);
-                                                        kex_algo->algorithm = strdup(token);
-
-                                                        // Populate metadata_json with CycloneDX algorithmProperties
-                                                        char* metadata = algorithm_populate_cdx_metadata(
-                                                            kex_algo->metadata_json,
-                                                            token,
-                                                            ALGO_CONTEXT_CIPHER_SUITE
-                                                        );
-                                                        if (metadata) {
-                                                            if (kex_algo->metadata_json) free(kex_algo->metadata_json);
-                                                            kex_algo->metadata_json = metadata;
-                                                        }
-
-                                                        // Add to asset store
-                                                        asset_store_add(context->asset_store, kex_algo);
-
                                                         // Create PROTOCOL → ALGORITHM relationship
                                                         relationship_t* rel = relationship_create(
                                                             RELATIONSHIP_USES,
@@ -2182,26 +2150,10 @@ int detect_openssh_service(service_scanner_context_t* context) {
                         for (size_t i = 0; i < ssh_client_protocol->kex_count; i++) {
                             const char* kex_name = ssh_client_protocol->supported_kex[i];
 
-                            // Create algorithm component for KEX algorithm
-                            crypto_asset_t* kex_algo = crypto_asset_create(kex_name, ASSET_TYPE_ALGORITHM);
+                            // v1.9.2: Use get_or_create to prevent duplicate algorithms
+                            crypto_asset_t* kex_algo = get_or_create_algorithm_asset(
+                                context->asset_store, kex_name, 0);
                             if (kex_algo) {
-                                kex_algo->location = strdup(client_config_path);
-                                kex_algo->algorithm = strdup(kex_name);
-
-                                // Populate metadata_json with CycloneDX algorithmProperties
-                                char* metadata = algorithm_populate_cdx_metadata(
-                                    kex_algo->metadata_json,
-                                    kex_name,
-                                    ALGO_CONTEXT_CIPHER_SUITE
-                                );
-                                if (metadata) {
-                                    if (kex_algo->metadata_json) free(kex_algo->metadata_json);
-                                    kex_algo->metadata_json = metadata;
-                                }
-
-                                // Add to asset store
-                                asset_store_add(context->asset_store, kex_algo);
-
                                 // Create PROTOCOL → ALGORITHM relationship
                                 relationship_t* rel = relationship_create(
                                     RELATIONSHIP_USES,

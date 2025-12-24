@@ -752,36 +752,22 @@ void register_embedded_providers_for_asset(asset_store_t* store,
                     if (!algo_name || strlen(algo_name) == 0) continue;
 
                     // Generate algorithm bom-ref (use algo: prefix for consistency)
-                    char algo_ref[128];
-                    snprintf(algo_ref, sizeof(algo_ref), "algo:%s", algo_name);
-                    // Lowercase (after prefix)
-                    for (char* p = algo_ref + 5; *p; p++) {  // Skip "algo:" prefix
-                        *p = tolower(*p);
-                    }
-
-                    // Create algorithm component if it doesn't exist
-                    crypto_asset_t* algo_asset = crypto_asset_create(algo_name, ASSET_TYPE_ALGORITHM);
+                    // v1.9.2: Use get_or_create to prevent duplicate algorithms
+                    crypto_asset_t* algo_asset = get_or_create_algorithm_asset(store, algo_name, 0);
                     if (algo_asset) {
-                        free(algo_asset->id);  // Replace generated ID with algo: prefixed one
-                        algo_asset->id = strdup(algo_ref);
-                        algo_asset->algorithm = strdup(algo_name);
+                        // Create PROVIDES relationship from embedded provider to algorithm
+                        relationship_t* provides_rel = relationship_create(
+                            RELATIONSHIP_PROVIDES,
+                            provider_asset->id,  // From: embedded provider library
+                            algo_asset->id,      // To: algorithm (by asset ID)
+                            0.90                 // High confidence for embedded providers
+                        );
 
-                        // Try to add (will be deduplicated if already exists)
-                        asset_store_add(store, algo_asset);
-                    }
-
-                    // Create PROVIDES relationship from embedded provider to algorithm
-                    relationship_t* provides_rel = relationship_create(
-                        RELATIONSHIP_PROVIDES,
-                        provider_asset->id,  // From: embedded provider library
-                        algo_ref,            // To: algorithm (by bom-ref)
-                        0.90                 // High confidence for embedded providers
-                    );
-
-                    if (provides_rel) {
-                        int res = asset_store_add_relationship(store, provides_rel);
-                        if (res != 0) {
-                            relationship_destroy(provides_rel);
+                        if (provides_rel) {
+                            int res = asset_store_add_relationship(store, provides_rel);
+                            if (res != 0) {
+                                relationship_destroy(provides_rel);
+                            }
                         }
                     }
                 }
@@ -962,37 +948,22 @@ void create_library_algorithm_relationships(asset_store_t *store,
         const char* algo_name = *alg;
         if (!algo_name || strlen(algo_name) == 0) continue;
 
-        // Generate algorithm bom-ref (use algo: prefix for consistency)
-        char algo_ref[128];
-        snprintf(algo_ref, sizeof(algo_ref), "algo:%s", algo_name);
-        // Lowercase (after prefix)
-        for (char* p = algo_ref + 5; *p; p++) {  // Skip "algo:" prefix
-            *p = tolower(*p);
-        }
-
-        // Create algorithm component if it doesn't exist
-        crypto_asset_t* algo_asset = crypto_asset_create(algo_name, ASSET_TYPE_ALGORITHM);
+        // v1.9.2: Use get_or_create to prevent duplicate algorithms
+        crypto_asset_t* algo_asset = get_or_create_algorithm_asset(store, algo_name, 0);
         if (algo_asset) {
-            free(algo_asset->id);  // Replace generated ID with algo: prefixed one
-            algo_asset->id = strdup(algo_ref);
-            algo_asset->algorithm = strdup(algo_name);
+            // Create PROVIDES relationship from library to algorithm
+            relationship_t* provides_rel = relationship_create(
+                RELATIONSHIP_PROVIDES,
+                lib_asset->id,     // From: system library
+                algo_asset->id,    // To: algorithm (by asset ID)
+                0.85               // Confidence for ELF-detected libraries
+            );
 
-            // Try to add (will be deduplicated if already exists)
-            asset_store_add(store, algo_asset);
-        }
-
-        // Create PROVIDES relationship from library to algorithm
-        relationship_t* provides_rel = relationship_create(
-            RELATIONSHIP_PROVIDES,
-            lib_asset->id,   // From: system library
-            algo_ref,        // To: algorithm (by bom-ref)
-            0.85             // Confidence for ELF-detected libraries
-        );
-
-        if (provides_rel) {
-            int res = asset_store_add_relationship(store, provides_rel);
-            if (res != 0) {
-                relationship_destroy(provides_rel);
+            if (provides_rel) {
+                int res = asset_store_add_relationship(store, provides_rel);
+                if (res != 0) {
+                    relationship_destroy(provides_rel);
+                }
             }
         }
     }

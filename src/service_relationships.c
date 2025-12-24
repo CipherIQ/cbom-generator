@@ -303,7 +303,43 @@ crypto_asset_t* create_algorithm_asset_from_components(const char* algorithm_nam
     return asset;
 }
 
+// v1.9.2: Get existing algorithm or create new one (prevents duplicates)
+// Uses canonical ID generation consistent with create_algorithm_asset_from_components
+crypto_asset_t* get_or_create_algorithm_asset(asset_store_t* store,
+                                              const char* algorithm_name,
+                                              int key_size) {
+    if (!store || !algorithm_name) return NULL;
+
+    // Generate canonical ID (same formula as create_algorithm_asset_from_components)
+    char id_string[256];
+    snprintf(id_string, sizeof(id_string), "algorithm|%s|%d", algorithm_name, key_size);
+
+    // Compute SHA-256 hash
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256((unsigned char*)id_string, strlen(id_string), hash);
+
+    char canonical_id[SHA256_DIGEST_LENGTH * 2 + 1];
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(canonical_id + i * 2, "%02x", hash[i]);
+    }
+
+    // Check if algorithm already exists in the store
+    crypto_asset_t* existing = asset_store_find(store, canonical_id);
+    if (existing) {
+        return existing;  // Return existing, don't create duplicate
+    }
+
+    // Create new algorithm asset with canonical ID
+    crypto_asset_t* asset = create_algorithm_asset_from_components(algorithm_name, key_size);
+    if (asset) {
+        asset_store_add(store, asset);
+    }
+
+    return asset;
+}
+
 // Decompose cipher suite and create SUITE→ALGORITHM relationships
+// v1.9.2: Uses get_or_create_algorithm_asset to prevent duplicate algorithms
 int decompose_cipher_suite_to_algorithms(asset_store_t* store,
                                          const char* suite_id,
                                          const char* kex,
@@ -316,9 +352,8 @@ int decompose_cipher_suite_to_algorithms(asset_store_t* store,
 
     // Create KEX algorithm asset and relationship
     if (kex && strlen(kex) > 0) {
-        crypto_asset_t* kex_asset = create_algorithm_asset_from_components(kex, 0);
+        crypto_asset_t* kex_asset = get_or_create_algorithm_asset(store, kex, 0);
         if (kex_asset) {
-            asset_store_add(store, kex_asset);
             create_suite_algorithm_relationship(store, suite_id, kex_asset->id, 0.95);
             relationships_created++;
         }
@@ -326,9 +361,8 @@ int decompose_cipher_suite_to_algorithms(asset_store_t* store,
 
     // Create auth algorithm asset and relationship (avoid duplicate if same as KEX)
     if (auth && strlen(auth) > 0 && (!kex || strcmp(auth, kex) != 0)) {
-        crypto_asset_t* auth_asset = create_algorithm_asset_from_components(auth, 0);
+        crypto_asset_t* auth_asset = get_or_create_algorithm_asset(store, auth, 0);
         if (auth_asset) {
-            asset_store_add(store, auth_asset);
             create_suite_algorithm_relationship(store, suite_id, auth_asset->id, 0.95);
             relationships_created++;
         }
@@ -342,9 +376,8 @@ int decompose_cipher_suite_to_algorithms(asset_store_t* store,
         else if (strstr(enc, "192")) enc_key_size = 192;
         else if (strstr(enc, "256")) enc_key_size = 256;
 
-        crypto_asset_t* enc_asset = create_algorithm_asset_from_components(enc, enc_key_size);
+        crypto_asset_t* enc_asset = get_or_create_algorithm_asset(store, enc, enc_key_size);
         if (enc_asset) {
-            asset_store_add(store, enc_asset);
             create_suite_algorithm_relationship(store, suite_id, enc_asset->id, 0.95);
             relationships_created++;
         }
@@ -352,9 +385,8 @@ int decompose_cipher_suite_to_algorithms(asset_store_t* store,
 
     // Create MAC algorithm asset and relationship (avoid duplicate if same as enc)
     if (mac && strlen(mac) > 0 && (!enc || strstr(enc, mac) == NULL)) {
-        crypto_asset_t* mac_asset = create_algorithm_asset_from_components(mac, 0);
+        crypto_asset_t* mac_asset = get_or_create_algorithm_asset(store, mac, 0);
         if (mac_asset) {
-            asset_store_add(store, mac_asset);
             create_suite_algorithm_relationship(store, suite_id, mac_asset->id, 0.95);
             relationships_created++;
         }
