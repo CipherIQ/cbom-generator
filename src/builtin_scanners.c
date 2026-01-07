@@ -38,6 +38,7 @@ extern cbom_config_t g_cbom_config;
 #include <stdarg.h>
 #include <time.h>
 #include <pthread.h>
+#include <ctype.h>
 
 // TUI-aware logging - suppress output when TUI is active
 static void log_printf(const char* format, ...) {
@@ -51,6 +52,37 @@ static void log_printf(const char* format, ...) {
     vfprintf(stderr, format, args);  // Write to stderr, not stdout
     va_end(args);
     fflush(stderr);
+}
+
+// ============================================================================
+// Crypto Config Detection Helpers
+// ============================================================================
+
+// Check if string contains any crypto keyword
+static bool contains_crypto_keyword(const char* str) {
+    if (!str) return false;
+    return strstr(str, "ssl") || strstr(str, "tls") ||
+           strstr(str, "crypto") || strstr(str, "cert");
+}
+
+// Check if directory name looks like a component name (not a description)
+// "openssl-lib" → true (valid identifier)
+// "117 openssl cmake bug" → false (has spaces, starts with digit)
+static bool is_component_name(const char* name) {
+    if (!name || !*name) return false;
+    // Starts with digit → likely a ticket/test number
+    if (isdigit((unsigned char)name[0])) return false;
+    // Contains space → likely a description, not an identifier
+    if (strchr(name, ' ') != NULL) return false;
+    return true;
+}
+
+// Check if path contains standard crypto directories
+static bool in_standard_crypto_path(const char* path) {
+    if (!path) return false;
+    return strstr(path, "/etc/ssl/") || strstr(path, "/etc/pki/") ||
+           strstr(path, "/etc/ssh/") || strstr(path, "/.ssh/") ||
+           strstr(path, "/.gnupg/");
 }
 
 // Forward declaration to avoid circular dependency
@@ -255,13 +287,48 @@ static int fs_scanner_file_callback(const file_info_t* file_info,
         }
             
         case FILE_TYPE_CONFIG:
-            // Only create assets for config files that likely contain crypto settings
-            if (strstr(file_info->path, "ssl") || strstr(file_info->path, "tls") ||
-                strstr(file_info->path, "crypto") || strstr(file_info->path, "cert")) {
-                asset = crypto_asset_create(file_info->path, ASSET_TYPE_SERVICE);
-                if (asset) {
-                    asset->location = strdup(file_info->path);
-                    asset->algorithm = strdup("Configuration");
+            {
+                // Extract filename from path
+                const char* filename = strrchr(file_info->path, '/');
+                filename = filename ? filename + 1 : file_info->path;
+
+                // Extract parent directory name
+                char parent_dir[256] = {0};
+                if (filename != file_info->path) {
+                    const char* parent_end = filename - 1;  // points to '/'
+                    const char* parent_start = parent_end - 1;
+                    while (parent_start > file_info->path && *parent_start != '/') {
+                        parent_start--;
+                    }
+                    if (*parent_start == '/') parent_start++;
+                    size_t len = (size_t)(parent_end - parent_start);
+                    if (len < sizeof(parent_dir)) {
+                        strncpy(parent_dir, parent_start, len);
+                        parent_dir[len] = '\0';
+                    }
+                }
+
+                bool should_flag = false;
+
+                // 1. Filename contains crypto keyword → flag
+                if (contains_crypto_keyword(filename)) {
+                    should_flag = true;
+                }
+                // 2. Parent dir contains keyword AND is a component name → flag
+                else if (contains_crypto_keyword(parent_dir) && is_component_name(parent_dir)) {
+                    should_flag = true;
+                }
+                // 3. In standard crypto path → flag
+                else if (in_standard_crypto_path(file_info->path)) {
+                    should_flag = true;
+                }
+
+                if (should_flag) {
+                    asset = crypto_asset_create(file_info->path, ASSET_TYPE_SERVICE);
+                    if (asset) {
+                        asset->location = strdup(file_info->path);
+                        asset->algorithm = strdup("Configuration");
+                    }
                 }
             }
             break;
