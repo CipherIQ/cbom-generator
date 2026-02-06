@@ -15,7 +15,7 @@
 #define _GNU_SOURCE
 #include "slsa_provenance.h"
 #include "secure_memory.h"
-#include "../build/src/provenance.h"  // Generated build-time configuration
+#include "provenance.h"  // Generated build-time configuration
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

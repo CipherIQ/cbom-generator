@@ -19,7 +19,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Reproducible builds - pin compiler versions and add file prefix mapping
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.")
 
 # Security and hardening flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-strong")
@@ -41,7 +41,7 @@ set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0 -DDEBUG")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-z,relro,-z,now")
 
 # Include directories
-include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Find required packages with pinned versions
 find_package(PkgConfig REQUIRED)
@@ -75,21 +75,21 @@ find_package(Git QUIET)
 if(GIT_FOUND)
     execute_process(
         COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         OUTPUT_VARIABLE GIT_COMMIT_HASH
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
     )
     execute_process(
         COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         OUTPUT_VARIABLE GIT_BRANCH
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
     )
     execute_process(
         COMMAND ${GIT_EXECUTABLE} diff --quiet
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         RESULT_VARIABLE GIT_DIRTY_RESULT
         ERROR_QUIET
     )
@@ -132,8 +132,8 @@ string(TIMESTAMP CMAKE_TIMESTAMP "%Y-%m-%dT%H:%M:%SZ" UTC)
 
 # Record dependency versions in provenance metadata (after all dependencies are found)
 configure_file(
-    "${CMAKE_SOURCE_DIR}/src/provenance.h.in"
-    "${CMAKE_BINARY_DIR}/src/provenance.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/provenance.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/src/provenance.h"
     @ONLY
 )
 
@@ -211,7 +211,7 @@ set(SOURCES
 add_executable(cbom-generator src/main.c src/cbom_serializer.c ${SOURCES})
 
 # Link libraries
-target_link_libraries(cbom-generator
+target_link_libraries(cbom-generator PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     ${JSON_C_LIBRARIES}
@@ -231,7 +231,7 @@ target_include_directories(cbom-generator PRIVATE
     ${CURSES_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 
 # Compiler definitions
@@ -284,7 +284,7 @@ if(TEST_SOURCES)
         ${CURSES_INCLUDE_DIRS}
         ${YAML_INCLUDE_DIRS}
         ${JANSSON_INCLUDE_DIRS}
-        ${CMAKE_BINARY_DIR}/src
+        ${CMAKE_CURRENT_BINARY_DIR}/src
     )
     target_compile_definitions(cbom-tests PRIVATE ${JSON_C_CFLAGS_OTHER} TEST_RUNNER_INTEGRATION)
 
@@ -313,7 +313,7 @@ target_include_directories(cbom-cache-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-cache-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -342,7 +342,7 @@ target_include_directories(cbom-cert-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-cert-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -370,7 +370,7 @@ target_include_directories(cbom-cert-focused PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-cert-focused PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -399,7 +399,7 @@ target_include_directories(cbom-fs-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-fs-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -431,7 +431,7 @@ add_test(NAME cbom_fs_tests COMMAND cbom-fs-tests)
 # target_include_directories(cbom-fs-simple-tests PRIVATE
 #     ${JSON_C_INCLUDE_DIRS}
 #     ${CURL_INCLUDE_DIRS}
-#     ${CMAKE_BINARY_DIR}/src
+#     ${CMAKE_CURRENT_BINARY_DIR}/src
 # )
 # target_compile_definitions(cbom-fs-simple-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 #
@@ -459,7 +459,7 @@ add_test(NAME cbom_fs_tests COMMAND cbom-fs-tests)
 #     ${CURL_INCLUDE_DIRS}
 #     ${YAML_INCLUDE_DIRS}
 #     ${JANSSON_INCLUDE_DIRS}
-#     ${CMAKE_BINARY_DIR}/src
+#     ${CMAKE_CURRENT_BINARY_DIR}/src
 # )
 # target_compile_definitions(cbom-cache-demo PRIVATE ${JSON_C_CFLAGS_OTHER})
 #
@@ -486,7 +486,7 @@ target_include_directories(cbom-privacy-attestation-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-privacy-attestation-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -512,7 +512,7 @@ target_include_directories(cbom-determinism-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-determinism-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -538,7 +538,7 @@ target_include_directories(cbom-key-scanner-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-key-scanner-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -567,7 +567,7 @@ target_include_directories(cbom-package-scanner-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-package-scanner-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -596,7 +596,7 @@ target_include_directories(cbom-service-scanner-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-service-scanner-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 
@@ -625,7 +625,7 @@ target_include_directories(cbom-cipher-suite-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-cipher-suite-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-cipher-suite-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -651,8 +651,8 @@ target_include_directories(cbom-crypto-registry-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-crypto-registry-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-crypto-registry-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable)
@@ -678,8 +678,8 @@ target_include_directories(cbom-version-resolver-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-version-resolver-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-version-resolver-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable)
@@ -706,7 +706,7 @@ target_include_directories(cbom-pqc-classifier-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-pqc-classifier-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-pqc-classifier-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -732,7 +732,7 @@ target_include_directories(cbom-pqc-report-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-pqc-report-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-pqc-report-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -759,7 +759,7 @@ target_include_directories(cbom-fixture-integration-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-fixture-integration-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-fixture-integration-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -788,12 +788,12 @@ target_include_directories(test-yaml-plugin-manual PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_options(test-yaml-plugin-manual PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
 
 # Add as a test
-add_test(NAME yaml_plugin_simple_test COMMAND test-yaml-plugin-manual WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME yaml_plugin_simple_test COMMAND test-yaml-plugin-manual WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Service discovery test (v1.3 Phase 2)
 add_executable(test-service-discovery tests/test_service_discovery_simple.c tests/test_cert_scanner_stats.c ${SOURCES} tests/test_globals.c)
@@ -814,12 +814,12 @@ target_include_directories(test-service-discovery PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_options(test-service-discovery PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
 
 # Add as a test
-add_test(NAME service_discovery_test COMMAND test-service-discovery WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME service_discovery_test COMMAND test-service-discovery WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(cbom-relationship-builder-tests
     OpenSSL::SSL
@@ -838,7 +838,7 @@ target_include_directories(cbom-relationship-builder-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-relationship-builder-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-relationship-builder-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -864,12 +864,12 @@ target_include_directories(cbom-config-parser-tests PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
     ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-config-parser-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-config-parser-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
 
-add_test(NAME cbom_config_parser_tests COMMAND cbom-config-parser-tests WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME cbom_config_parser_tests COMMAND cbom-config-parser-tests WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Cross-architecture scanning tests (v1.8 - SONAME extraction, path normalization, registry)
 add_executable(cbom-cross-arch-tests tests/test_cross_arch_scanning.c tests/test_cert_scanner_stats.c ${SOURCES} tests/test_globals.c)
@@ -890,7 +890,7 @@ target_include_directories(cbom-cross-arch-tests PRIVATE
     ${JANSSON_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
     ${YAML_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 target_compile_definitions(cbom-cross-arch-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 target_compile_options(cbom-cross-arch-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -914,7 +914,7 @@ add_test(NAME cbom_cross_arch_tests COMMAND cbom-cross-arch-tests)
 # target_include_directories(cbom-dedup-tests PRIVATE
 #     ${JSON_C_INCLUDE_DIRS}
 #     ${CURL_INCLUDE_DIRS}
-#     ${CMAKE_BINARY_DIR}/src
+#     ${CMAKE_CURRENT_BINARY_DIR}/src
 # )
 # target_compile_definitions(cbom-dedup-tests PRIVATE ${JSON_C_CFLAGS_OTHER})
 # target_compile_options(cbom-dedup-tests PRIVATE -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
@@ -928,8 +928,8 @@ target_link_libraries(cbom-binary-detector-tests
     m
 )
 target_include_directories(cbom-binary-detector-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 add_test(NAME cbom_binary_detector_tests COMMAND cbom-binary-detector-tests)
 
@@ -940,8 +940,8 @@ target_link_libraries(cbom-kernel-crypto-tests
     m
 )
 target_include_directories(cbom-kernel-crypto-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 add_test(NAME cbom_kernel_crypto_tests COMMAND cbom-kernel-crypto-tests)
 
@@ -953,8 +953,8 @@ target_link_libraries(cbom-package-detector-tests
     m
 )
 target_include_directories(cbom-package-detector-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_BINARY_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/src
     ${JSON_C_INCLUDE_DIRS}
 )
 add_test(NAME cbom_package_detector_tests COMMAND cbom-package-detector-tests)
@@ -962,8 +962,8 @@ add_test(NAME cbom_package_detector_tests COMMAND cbom-package-detector-tests)
 # Schema validation test 
 add_test(
     NAME cbom_schema_validation
-    COMMAND ${CMAKE_SOURCE_DIR}/tests/validate_schemas.sh
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_schemas.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Static analysis targets
@@ -973,7 +973,7 @@ find_program(CPPCHECK cppcheck)
 if(CLANG_STATIC_ANALYZER)
     add_custom_target(static-analysis-clang
         COMMAND ${CLANG_STATIC_ANALYZER} --analyze ${SOURCES}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Running clang static analyzer"
     )
 endif()
@@ -982,9 +982,9 @@ if(CPPCHECK)
     add_custom_target(static-analysis-cppcheck
         COMMAND ${CPPCHECK} --enable=all --error-exitcode=1 --std=c11 
                 --suppress=missingIncludeSystem
-                -I ${CMAKE_SOURCE_DIR}/include
-                ${CMAKE_SOURCE_DIR}/src/
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                -I ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Running cppcheck static analyzer"
     )
 endif()
@@ -1000,29 +1000,29 @@ endif()
 
 # No orphan code check
 add_custom_target(check-orphan-code
-    COMMAND ${CMAKE_SOURCE_DIR}/scripts/check-orphan-code.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-orphan-code.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Checking for orphaned source files"
 )
 
 # Schema validation
 add_custom_target(validate-schemas
-    COMMAND ${CMAKE_SOURCE_DIR}/scripts/validate-schemas.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate-schemas.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Validating pinned schemas"
 )
 
 # Normalization validation
 add_custom_target(validate-normalization
-    COMMAND ${CMAKE_SOURCE_DIR}/scripts/validate-normalization.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate-normalization.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Validating normalization test vectors"
 )
 
 # Property mapping validation
 add_custom_target(validate-property-mappings
-    COMMAND ${CMAKE_SOURCE_DIR}/scripts/validate-property-mappings.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate-property-mappings.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Validating CycloneDX property mappings against FROZEN v1.0 spec"
 )
 
