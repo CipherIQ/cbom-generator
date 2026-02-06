@@ -21,6 +21,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef CIPHERIQ_PRO
+#include "pro_hooks.h"
+#endif
+
 #include "cbom_types.h"
 #include "asset_store.h"
 #include "secure_memory.h"
@@ -7829,8 +7833,21 @@ int main(int argc, char *argv[]) {
         exit_code = determine_exit_code(g_error_collector);
     }
     
+    #ifdef CIPHERIQ_PRO
+    // Professional post-scan hook: signing, reports, tracking.
+    // Must run before cleanup so config and output_file are still valid.
+    {
+        int pro_result = pro_post_scan(&g_cbom_config, NULL,
+                                       g_cbom_config.output_file);
+        if (pro_result != 0) {
+            cleanup_subsystems();
+            return pro_result;
+        }
+    }
+    #endif
+
     // Cleanup
     cleanup_subsystems();
-    
+
     return exit_code;
 }

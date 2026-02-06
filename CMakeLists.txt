@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 project(cbom-generator VERSION 1.9.4 LANGUAGES C)
 
+# Professional features (disabled by default in open-source builds)
+option(CIPHERIQ_PRO "Build with Professional License features" OFF)
+if(CIPHERIQ_PRO)
+    add_definitions(-DCIPHERIQ_PRO)
+    message(STATUS "Building with CipherIQ Professional features")
+endif()
+
 # Set C11 standard
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
