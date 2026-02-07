@@ -7843,7 +7843,14 @@ int main(int argc, char *argv[]) {
     if (parse_arguments(argc, argv) != 0) {
         return 1;
     }
-    
+
+    #ifdef CIPHERIQ_PRO
+    // Professional startup: print banner and validate license.
+    if (pro_startup_check() != 0) {
+        return 1;
+    }
+    #endif
+
     // Setup deterministic environment
     if (setup_deterministic_environment() != 0) {
         return 2;

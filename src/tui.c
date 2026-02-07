@@ -384,9 +384,15 @@ static void tui_draw_header(tui_context_t* ctx, int* row) {
         : 0;
 
     // Top border with branding
+#ifdef CIPHERIQ_PRO
+    mvprintw(*row, 0, "+- CipherIQ Professional Edition ");
+    int title_len = 33;  // Length of "+- CipherIQ Professional Edition "
+    const char* branding = "v" CIQ_PRO_VERSION " -+";
+#else
     mvprintw(*row, 0, "+- CBOM Generator ");
     int title_len = 18;  // Length of "+- CBOM Generator "
     const char* branding = "CipherIQ v" CBOM_VERSION " -+";
+#endif
     int branding_len = strlen(branding);
     int fill_start = title_len;
     int fill_end = ctx->term_width - branding_len - 1;  // -1 for space

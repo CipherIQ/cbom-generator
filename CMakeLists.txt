@@ -5,6 +5,7 @@ project(cbom-generator VERSION 1.9.4 LANGUAGES C)
 option(CIPHERIQ_PRO "Build with Professional License features" OFF)
 if(CIPHERIQ_PRO)
     add_definitions(-DCIPHERIQ_PRO)
+    add_definitions(-DCIQ_PRO_VERSION="${CMAKE_PROJECT_VERSION}")
     message(STATUS "Building with CipherIQ Professional features")
 endif()
 
