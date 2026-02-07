@@ -119,7 +119,8 @@ discovery_config_t service_discovery_default_config(void) {
         .tls_probe_timeout_ms = 2000,
         .cache_ttl_seconds = 300,
         .use_cache = true,
-        .max_services = 0  // Unlimited
+        .max_services = 0,  // Unlimited
+        .config_only_mode = false
     };
     return config;
 }
@@ -235,6 +236,8 @@ bool service_discovery_try_detection_method(
 
     switch (method->type) {
         case DETECTION_METHOD_PROCESS:
+            // Config-only mode: skip process detection (firmware images)
+            if (engine->config.config_only_mode) break;
             // v1.8.1: Skip process detection in cross-arch mode
             // Host processes are irrelevant when scanning a foreign rootfs
             if (g_cbom_config.cross_arch_mode ||
@@ -254,6 +257,7 @@ bool service_discovery_try_detection_method(
             break;
 
         case DETECTION_METHOD_PORT:
+            if (engine->config.config_only_mode) break;
             if (engine->config.enable_port_detection) {
                 detected = port_detector_detect(&method->config.port, instance,
                                                 engine->config.enable_tls_probe,
@@ -280,6 +284,7 @@ bool service_discovery_try_detection_method(
             break;
 
         case DETECTION_METHOD_SYSTEMD:
+            if (engine->config.config_only_mode) break;
             if (engine->config.enable_systemd_detection) {
                 detected = systemd_detector_detect(&method->config.systemd, instance);
                 if (detected) {
@@ -292,6 +297,7 @@ bool service_discovery_try_detection_method(
             break;
 
         case DETECTION_METHOD_PACKAGE:
+            if (engine->config.config_only_mode) break;
             if (engine->config.enable_package_detection) {
                 detected = package_detector_detect(&method->config.package, instance);
                 if (detected) {

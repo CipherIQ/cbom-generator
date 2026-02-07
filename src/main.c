@@ -172,6 +172,12 @@ static void print_usage(const char *program_name) {
     printf("      --error-log FILE       Write errors to log file (useful with --tui)\n");
     printf("      --pqc-report FILE      Generate PQC migration report (text format)\n");
     printf("\n");
+#ifdef CIPHERIQ_PRO
+    printf("Professional Options:\n");
+    printf("      --profile NAME         Use industry scan profile (medical-device, automotive,\n");
+    printf("                             industrial, telecom) or path to custom profile YAML\n");
+    printf("\n");
+#endif
     printf("  -h, --help                 Show this help message\n");
     printf("  -v, --version              Show version information\n");
     printf("\nExamples:\n");
@@ -223,6 +229,7 @@ static int parse_arguments(int argc, char *argv[]) {
         {"cross-arch", no_argument, 0, 1021},
         {"yocto-manifest", required_argument, 0, 1022},
         {"rootfs-prefix", required_argument, 0, 1024},
+        {"profile", required_argument, 0, 1025},
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0}
@@ -377,6 +384,12 @@ static int parse_arguments(int argc, char *argv[]) {
                         g_cbom_config.rootfs_prefix[len - 1] = '\0';
                     }
                 }
+                break;
+            case 1025: // --profile
+                if (g_cbom_config.scan_profile) {
+                    free(g_cbom_config.scan_profile);
+                }
+                g_cbom_config.scan_profile = strdup(optarg);
                 break;
             case 'h':
                 print_usage(argv[0]);
@@ -6874,6 +6887,13 @@ static int run_walking_skeleton(void) {
                          "main", "Failed to register built-in scanners", NULL);
     }
 
+    // Apply plugin whitelist from scan profile (if set)
+    if (g_cbom_config.plugin_whitelist_count > 0) {
+        plugin_manager_set_whitelist(plugin_manager,
+            (const char **)g_cbom_config.plugin_whitelist,
+            g_cbom_config.plugin_whitelist_count);
+    }
+
     // Handle --list-plugins mode
     if (g_list_plugins_mode) {
         // Load YAML plugins first
@@ -7529,6 +7549,12 @@ skip_sequential_scanners:
             ERROR_LOG_ERROR(g_error_collector, ERROR_CATEGORY_MEMORY, 0,
                           "main", "Failed to create service discovery engine", NULL);
         } else {
+            // Apply config-only mode from scan profile (if set)
+            if (g_cbom_config.plugin_config_only) {
+                discovery_config_t disc_config = service_discovery_default_config();
+                disc_config.config_only_mode = true;
+                service_discovery_set_config(discovery_engine, &disc_config);
+            }
             services = service_discovery_discover_all(
                 discovery_engine,
                 plugin_manager,
@@ -7827,7 +7853,17 @@ int main(int argc, char *argv[]) {
     if (initialize_subsystems() != 0) {
         return 3;
     }
-    
+
+    #ifdef CIPHERIQ_PRO
+    // Professional pre-scan hook: apply scan profile if specified.
+    if (g_cbom_config.scan_profile) {
+        if (pro_apply_profile(&g_cbom_config) != 0) {
+            cleanup_subsystems();
+            return 4;
+        }
+    }
+    #endif
+
     // Run walking skeleton
     if (run_walking_skeleton() != 0) {
         exit_code = determine_exit_code(g_error_collector);

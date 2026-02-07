@@ -223,6 +223,10 @@ struct plugin_manager {
     char* plugin_directory;
     plugin_load_flags_t default_load_flags;
     uint32_t plugin_timeout_ms;
+
+    // Plugin whitelist filtering (set by scan profiles)
+    char** plugin_whitelist;            // Plugin names to load (NULL = load all)
+    size_t whitelist_count;             // Number of whitelisted plugins (0 = disabled)
 };
 
 // Plugin manager functions
@@ -246,6 +250,10 @@ plugin_instance_t* plugin_manager_find_plugin(plugin_manager_t* manager, const c
 // YAML plugin loading (v1.3)
 int plugin_manager_load_yaml_plugin(plugin_manager_t* manager, const char* yaml_path);
 int plugin_manager_scan_yaml_directory(plugin_manager_t* manager, const char* directory);
+
+// Plugin whitelist filtering (set by scan profiles)
+void plugin_manager_set_whitelist(plugin_manager_t* manager,
+                                  const char** names, size_t count);
 
 // Plugin execution
 int plugin_manager_execute_scanner(plugin_manager_t* manager, uint32_t instance_id,

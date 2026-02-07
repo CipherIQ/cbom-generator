@@ -80,6 +80,7 @@ typedef struct {
     int cache_ttl_seconds;           /**< Cache TTL in seconds (default: 300) */
     bool use_cache;                  /**< Enable caching (default: true) */
     int max_services;                /**< Maximum services to discover (0 = unlimited) */
+    bool config_only_mode;           /**< Config-only: skip process/port/systemd/package detection */
 } discovery_config_t;
 
 /**

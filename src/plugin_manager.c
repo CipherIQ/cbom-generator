@@ -188,7 +188,14 @@ void plugin_manager_destroy(plugin_manager_t* manager) {
     free(manager->trust_config.trust_root_path);
     free(manager->trust_config.test_keys_path);
     free(manager->trust_config.production_keys_path);
-    
+
+    // Free whitelist
+    if (manager->plugin_whitelist) {
+        for (size_t i = 0; i < manager->whitelist_count; i++)
+            free(manager->plugin_whitelist[i]);
+        free(manager->plugin_whitelist);
+    }
+
     free(manager);
 }
 
@@ -840,10 +847,41 @@ int plugin_manager_scan_yaml_directory(plugin_manager_t* manager, const char* di
             continue;
         }
 
+        // Build full path for stat check
+        char entry_path[4096];
+        snprintf(entry_path, sizeof(entry_path), "%s/%s", directory, entry->d_name);
+
+        // Recurse into subdirectories (e.g. plugins/ubuntu/, plugins/embedded/)
+        struct stat entry_st;
+        if (stat(entry_path, &entry_st) == 0 && S_ISDIR(entry_st.st_mode)) {
+            int sub_loaded = plugin_manager_scan_yaml_directory(manager, entry_path);
+            if (sub_loaded > 0) loaded_count += sub_loaded;
+            continue;
+        }
+
         // Check for .yaml or .yml extension
         const char* ext = strrchr(entry->d_name, '.');
         if (!ext || (strcmp(ext, ".yaml") != 0 && strcmp(ext, ".yml") != 0)) {
             continue;
+        }
+
+        // Check whitelist filter (if set by scan profile)
+        if (manager->whitelist_count > 0) {
+            char basename[256];
+            strncpy(basename, entry->d_name, sizeof(basename) - 1);
+            basename[sizeof(basename) - 1] = '\0';
+            char *dot = strrchr(basename, '.');
+            if (dot) *dot = '\0';
+
+            bool whitelisted = false;
+            for (size_t wi = 0; wi < manager->whitelist_count; wi++) {
+                if (manager->plugin_whitelist[wi] &&
+                    strcmp(basename, manager->plugin_whitelist[wi]) == 0) {
+                    whitelisted = true;
+                    break;
+                }
+            }
+            if (!whitelisted) continue;
         }
 
         // Build full path
@@ -867,8 +905,38 @@ int plugin_manager_scan_yaml_directory(plugin_manager_t* manager, const char* di
 
     closedir(dir);
 
-    fprintf(stderr, "INFO: Scanned directory %s: loaded %d YAML plugins, %d failed\n",
-            directory, loaded_count, failed_count);
+    if (manager->whitelist_count > 0) {
+        fprintf(stderr, "INFO: Scanned directory %s: loaded %d YAML plugins (%d skipped by whitelist, %d failed)\n",
+                directory, loaded_count, failed_count, failed_count);
+    } else {
+        fprintf(stderr, "INFO: Scanned directory %s: loaded %d YAML plugins, %d failed\n",
+                directory, loaded_count, failed_count);
+    }
 
     return loaded_count;
+}
+
+void plugin_manager_set_whitelist(plugin_manager_t* manager,
+                                  const char** names, size_t count) {
+    if (!manager) return;
+
+    // Free existing whitelist
+    if (manager->plugin_whitelist) {
+        for (size_t i = 0; i < manager->whitelist_count; i++)
+            free(manager->plugin_whitelist[i]);
+        free(manager->plugin_whitelist);
+        manager->plugin_whitelist = NULL;
+        manager->whitelist_count = 0;
+    }
+
+    if (!names || count == 0) return;
+
+    manager->plugin_whitelist = calloc(count, sizeof(char*));
+    if (!manager->plugin_whitelist) return;
+
+    for (size_t i = 0; i < count; i++) {
+        if (names[i])
+            manager->plugin_whitelist[i] = strdup(names[i]);
+    }
+    manager->whitelist_count = count;
 }
