@@ -1,0 +1,6 @@
+# Build artifacts from Emscripten-compiled dependencies
+*/build-wasm/
+*/build/
+
+# Keep source tarballs if vendored
+!*.tar.gz

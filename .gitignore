@@ -73,3 +73,9 @@ output/
 release/
 Testing/
 *.log
+
+# WASM build artifacts
+build-wasm/
+wasm/node_modules/
+wasm/dist/
+deps/*/build-wasm/
