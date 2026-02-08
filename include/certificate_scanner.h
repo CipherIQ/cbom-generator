@@ -15,12 +15,14 @@
 #ifndef CERTIFICATE_SCANNER_H
 #define CERTIFICATE_SCANNER_H
 
+#ifndef __EMSCRIPTEN__
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#endif
 #include <stdbool.h>
 #include <time.h>
 #include <stddef.h>
@@ -315,7 +317,9 @@ struct scan_context;
 // Certificate scanner context
 typedef struct {
     cert_scanner_config_t config;
+#ifndef __EMSCRIPTEN__
     X509_STORE* trust_store;     // OpenSSL trust store
+#endif
     struct asset_store* asset_store;  // Asset store for results
     struct scan_context* scan_context;  // Scan context with dedup info
     error_collector_t* error_collector;  // Error collector for detailed error reporting (Issue #5)
@@ -341,10 +345,12 @@ int cert_scanner_scan_paths(cert_scanner_context_t* context);
 
 // Certificate parsing functions
 cert_format_t cert_detect_format(const char* file_path);
+
+#ifndef __EMSCRIPTEN__
 X509* cert_load_from_file(const char* file_path, cert_format_t format);
 X509* cert_load_pem(const char* file_path);
 X509* cert_load_der(const char* file_path);
-int cert_load_pkcs12(const char* file_path, const char* password, 
+int cert_load_pkcs12(const char* file_path, const char* password,
                      X509** cert, EVP_PKEY** pkey, STACK_OF(X509)** ca_certs);
 
 // Certificate metadata extraction
@@ -393,6 +399,7 @@ char* cert_get_serial_number_hex(X509* cert);
 struct crypto_asset* cert_create_asset(const cert_metadata_t* metadata, const char* file_path, X509* cert);
 char* cert_generate_asset_id(const cert_metadata_t* metadata);
 char* cert_create_detailed_json_metadata(const cert_metadata_t* metadata, X509* cert);
+#endif /* !__EMSCRIPTEN__ */
 
 // Utility functions
 void cert_metadata_destroy(cert_metadata_t* metadata);

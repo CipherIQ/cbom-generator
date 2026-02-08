@@ -35,6 +35,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <ctype.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/bio.h>
 #include <openssl/sha.h>
 #include <openssl/pem.h>
@@ -43,7 +44,10 @@
 #include <openssl/evp.h>
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
+#endif
 #include <json-c/json.h>
+
+#ifndef __EMSCRIPTEN__
 
 // Thread-local error storage
 static __thread char last_error[256] = {0};
@@ -1851,3 +1855,249 @@ bool key_scanner_validate_no_pem_headers_in_output(const char* output) {
 
     return true; // PASS: No PEM headers found
 }
+
+#else /* __EMSCRIPTEN__ — WASM stubs for key scanner */
+
+/*
+ * WASM build: key parsing requires OpenSSL which is not available.
+ * These stubs provide the public API so builtin_scanners.c links correctly.
+ * All scanning functions return 0 (no keys found).
+ * Phase 2 will replace these with a JS bridge to pkijs.
+ */
+
+static __thread char last_error[256] = "Key parsing not available in WASM";
+
+static void set_error(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(last_error, sizeof(last_error), fmt, args);
+    va_end(args);
+}
+
+const char* key_scanner_get_last_error(void) {
+    return last_error;
+}
+
+void key_scanner_clear_error(void) {
+    last_error[0] = '\0';
+}
+
+key_scanner_config_t key_scanner_create_default_config(void) {
+    key_scanner_config_t config = {0};
+    config.recursive_scan = true;
+    config.max_file_size = 1024 * 1024;
+    config.timeout_seconds = 5;
+    config.detect_weak_keys = false;
+    config.redact_key_material = true;
+    return config;
+}
+
+void key_scanner_config_destroy(key_scanner_config_t* config) {
+    if (!config) return;
+    if (config->scan_paths) {
+        for (size_t i = 0; i < config->scan_path_count; i++) {
+            free(config->scan_paths[i]);
+        }
+        free(config->scan_paths);
+    }
+    if (config->passwords) {
+        for (size_t i = 0; i < config->password_count; i++) {
+            free(config->passwords[i]);
+        }
+        free(config->passwords);
+    }
+    memset(config, 0, sizeof(key_scanner_config_t));
+}
+
+key_scanner_context_t* key_scanner_create(const key_scanner_config_t* config,
+                                         struct asset_store* store) {
+    if (!config || !store) return NULL;
+
+    key_scanner_context_t* ctx = calloc(1, sizeof(key_scanner_context_t));
+    if (!ctx) return NULL;
+
+    ctx->config = *config;
+    ctx->asset_store = store;
+    pthread_mutex_init(&ctx->mutex, NULL);
+    return ctx;
+}
+
+void key_scanner_destroy(key_scanner_context_t* context) {
+    if (!context) return;
+    pthread_mutex_destroy(&context->mutex);
+    free(context);
+}
+
+int key_scanner_scan_file(key_scanner_context_t* context, const char* file_path) {
+    (void)context; (void)file_path;
+    return 0;
+}
+
+int key_scanner_scan_directory(key_scanner_context_t* context, const char* dir_path) {
+    (void)context; (void)dir_path;
+    return 0;
+}
+
+int key_scanner_scan_paths(key_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+key_scanner_stats_t key_scanner_get_stats(const key_scanner_context_t* context) {
+    key_scanner_stats_t stats = {0};
+    if (context) {
+        stats = context->stats;
+    }
+    return stats;
+}
+
+key_format_t key_detect_format(const char* file_path) {
+    (void)file_path;
+    return KEY_FORMAT_UNKNOWN;
+}
+
+key_format_t key_detect_format_from_content(const unsigned char* data, size_t len) {
+    (void)data; (void)len;
+    return KEY_FORMAT_UNKNOWN;
+}
+
+bool key_is_encrypted(const char* file_path) {
+    (void)file_path;
+    return false;
+}
+
+storage_security_t key_detect_storage_security(const char* file_path, bool is_encrypted) {
+    (void)file_path; (void)is_encrypted;
+    return STORAGE_UNKNOWN;
+}
+
+bool key_is_in_hsm(const char* file_path) { (void)file_path; return false; }
+bool key_is_in_tpm(const char* file_path) { (void)file_path; return false; }
+bool key_is_in_keyring(const char* file_path) { (void)file_path; return false; }
+
+key_lifecycle_t key_extract_lifecycle(const char* file_path) {
+    (void)file_path;
+    key_lifecycle_t lc = {0};
+    return lc;
+}
+
+bool key_is_expired(const key_lifecycle_t* lifecycle) {
+    (void)lifecycle;
+    return false;
+}
+
+int key_days_until_expiration(const key_lifecycle_t* lifecycle) {
+    (void)lifecycle;
+    return -1;
+}
+
+key_usage_t key_detect_primary_usage(const char* file_path) {
+    (void)file_path;
+    return KEY_USAGE_UNKNOWN;
+}
+
+key_state_t determine_key_state(const char* key_path, time_t* creation_date,
+                                 time_t* activation_date) {
+    (void)key_path; (void)creation_date; (void)activation_date;
+    return KEY_STATE_UNKNOWN;
+}
+
+const char* key_state_to_string(key_state_t state) {
+    switch (state) {
+        case KEY_STATE_PRE_ACTIVATION: return "pre-activation";
+        case KEY_STATE_ACTIVE: return "active";
+        case KEY_STATE_SUSPENDED: return "suspended";
+        case KEY_STATE_DEACTIVATED: return "deactivated";
+        case KEY_STATE_COMPROMISED: return "compromised";
+        case KEY_STATE_DESTROYED: return "destroyed";
+        default: return "unknown";
+    }
+}
+
+secured_by_t* detect_key_encryption(const char* key_path) {
+    (void)key_path;
+    return NULL;
+}
+
+void secured_by_destroy(secured_by_t* secured_by) {
+    if (!secured_by) return;
+    free(secured_by->mechanism);
+    free(secured_by->algorithm_ref);
+    free(secured_by);
+}
+
+struct crypto_asset* key_create_asset(const key_metadata_t* metadata) {
+    (void)metadata;
+    return NULL;
+}
+
+char* key_create_detailed_json_metadata(const key_metadata_t* metadata) {
+    (void)metadata;
+    return NULL;
+}
+
+void key_metadata_destroy(key_metadata_t* metadata) {
+    if (!metadata) return;
+    free(metadata->algorithm);
+    free(metadata->curve_name);
+    free(metadata->curve_oid);
+    free(metadata->key_id_sha256);
+    free(metadata->public_key_hash);
+    free(metadata->fingerprint);
+    free(metadata->file_path);
+    free(metadata->file_path_hash);
+    free(metadata->associated_cert_id);
+    free(metadata->detection_method);
+    free(metadata->algorithm_ref);
+    free(metadata->oid);
+    if (metadata->usages) free(metadata->usages);
+    if (metadata->weak_reasons) {
+        for (size_t i = 0; i < metadata->weak_reason_count; i++) {
+            free(metadata->weak_reasons[i]);
+        }
+        free(metadata->weak_reasons);
+    }
+    if (metadata->secured_by) {
+        secured_by_destroy(metadata->secured_by);
+    }
+    free(metadata);
+}
+
+void key_lifecycle_destroy(key_lifecycle_t* lifecycle) {
+    (void)lifecycle;
+}
+
+const char* key_failure_reason_to_string(key_failure_reason_t reason) {
+    switch (reason) {
+        case KEY_FAIL_INVALID_PEM_BLOCK: return "INVALID_PEM_BLOCK";
+        case KEY_FAIL_DER_TRUNCATED: return "DER_TRUNCATED";
+        case KEY_FAIL_DER_OVERLONG: return "DER_OVERLONG";
+        case KEY_FAIL_ENCRYPTED_NO_PASSWORD: return "ENCRYPTED_NO_PASSWORD";
+        case KEY_FAIL_WRONG_PASSWORD: return "WRONG_PASSWORD";
+        case KEY_FAIL_UNSUPPORTED_ENCRYPTION: return "UNSUPPORTED_ENCRYPTION";
+        case KEY_FAIL_UNSUPPORTED_KEY_TYPE: return "UNSUPPORTED_KEY_TYPE";
+        case KEY_FAIL_TOO_LARGE: return "TOO_LARGE";
+        case KEY_FAIL_TIMEOUT: return "TIMEOUT";
+        case KEY_FAIL_SANITY_LIMIT_HIT: return "SANITY_LIMIT_HIT";
+        case KEY_FAIL_MEMORY_ERROR: return "MEMORY_ERROR";
+        case KEY_FAIL_IO_ERROR: return "IO_ERROR";
+        case KEY_FAIL_UNKNOWN: return "UNKNOWN";
+        default: return "INVALID_REASON";
+    }
+}
+
+void key_scanner_record_failure(key_scanner_context_t* context, key_failure_reason_t reason) {
+    (void)context; (void)reason;
+}
+
+bool key_scanner_validate_no_key_material_in_output(const char* output) {
+    (void)output;
+    return true;
+}
+
+bool key_scanner_validate_no_pem_headers_in_output(const char* output) {
+    (void)output;
+    return true;
+}
+
+#endif /* __EMSCRIPTEN__ */

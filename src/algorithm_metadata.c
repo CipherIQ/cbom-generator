@@ -18,11 +18,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/ec.h>
 #include <openssl/objects.h>
+#endif
 #include <json-c/json.h>
 
 // OID to algorithm name mapping table
@@ -295,6 +297,21 @@ const char* quantum_category_to_string(quantum_security_category_t category) {
     }
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no OpenSSL — X.509 parsing not available */
+algorithm_granular_t* algorithm_parse_from_x509_public_key(void* x509_cert) {
+    (void)x509_cert;
+    return NULL;
+}
+
+algorithm_granular_t* algorithm_parse_from_x509_signature(void* x509_cert) {
+    (void)x509_cert;
+    return NULL;
+}
+
+#else /* native Linux */
+
 // Parse algorithm from X.509 public key
 algorithm_granular_t* algorithm_parse_from_x509_public_key(void* x509_cert) {
     if (!x509_cert) return NULL;
@@ -498,6 +515,8 @@ algorithm_granular_t* algorithm_parse_from_x509_signature(void* x509_cert) {
     return metadata;
 }
 
+#endif /* __EMSCRIPTEN__ */
+
 // Parse algorithm from OID
 algorithm_granular_t* algorithm_parse_from_oid(const char* oid) {
     if (!oid) return NULL;
@@ -513,6 +532,7 @@ algorithm_granular_t* algorithm_parse_from_oid(const char* oid) {
         metadata->primitive_type = algorithm_get_primitive_type(alg_name);
         metadata->primitive = strdup(alg_name);
     } else {
+#ifndef __EMSCRIPTEN__
         // Try OpenSSL OBJ lookup
         ASN1_OBJECT* obj = OBJ_txt2obj(oid, 1);
         if (obj) {
@@ -524,6 +544,7 @@ algorithm_granular_t* algorithm_parse_from_oid(const char* oid) {
             }
             ASN1_OBJECT_free(obj);
         }
+#endif
     }
 
     return metadata;

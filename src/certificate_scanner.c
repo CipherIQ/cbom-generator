@@ -33,15 +33,18 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <time.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/bio.h>
 #include <openssl/sha.h>
 #include <openssl/asn1.h>
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
+#endif
 #include <json-c/json.h>
 #include <ctype.h>
-#include <openssl/core_names.h>
+
+#ifndef __EMSCRIPTEN__
 
 // Thread-local error storage
 static __thread char last_error[256] = {0};
@@ -3265,10 +3268,219 @@ void ca_info_destroy(ca_info_t* info) {
 
 void public_key_params_destroy(public_key_params_t* params) {
     if (!params) return;
-    
+
     free(params->algorithm);
     free(params->curve_name);
     free(params->public_key_hash);
     free(params->key_usage);
     free(params->extended_key_usage);
 }
+
+#else /* __EMSCRIPTEN__ — WASM stubs for certificate scanner */
+
+/*
+ * WASM build: certificate parsing requires OpenSSL which is not available.
+ * These stubs provide the public API so builtin_scanners.c links correctly.
+ * All scanning functions return 0 (no certificates found).
+ * Phase 2 will replace these with a JS bridge to pkijs.
+ */
+
+static __thread char last_error[256] = "Crypto parsing not available in WASM";
+
+static void set_error(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(last_error, sizeof(last_error), fmt, args);
+    va_end(args);
+}
+
+const char* cert_scanner_get_last_error(void) {
+    return last_error;
+}
+
+void cert_scanner_clear_error(void) {
+    last_error[0] = '\0';
+}
+
+cert_scanner_config_t cert_scanner_create_default_config(void) {
+    cert_scanner_config_t config = {0};
+    config.validate_trust_chains = false;
+    config.check_revocation = false;
+    config.detect_weak_signatures = false;
+    config.recursive_scan = true;
+    config.max_file_size = 10 * 1024 * 1024;
+    config.timeout_seconds = 30;
+    return config;
+}
+
+cert_scanner_context_t* cert_scanner_create(const cert_scanner_config_t* config,
+                                           struct asset_store* store) {
+    if (!config || !store) return NULL;
+
+    cert_scanner_context_t* ctx = calloc(1, sizeof(cert_scanner_context_t));
+    if (!ctx) return NULL;
+
+    ctx->config = *config;
+    ctx->asset_store = store;
+    return ctx;
+}
+
+void cert_scanner_destroy(cert_scanner_context_t* context) {
+    if (!context) return;
+    free(context->config.trust_store_path);
+    if (context->config.scan_paths) {
+        for (size_t i = 0; i < context->config.scan_path_count; i++) {
+            free(context->config.scan_paths[i]);
+        }
+        free(context->config.scan_paths);
+    }
+    free(context);
+}
+
+int cert_scanner_scan_file(cert_scanner_context_t* context, const char* file_path) {
+    (void)context; (void)file_path;
+    return 0;
+}
+
+int cert_scanner_scan_directory(cert_scanner_context_t* context, const char* dir_path) {
+    (void)context; (void)dir_path;
+    return 0;
+}
+
+int cert_scanner_scan_paths(cert_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+cert_scanner_stats_t cert_scanner_get_stats(cert_scanner_context_t* context) {
+    cert_scanner_stats_t stats = {0};
+    if (context) {
+        stats = context->stats;
+    }
+    return stats;
+}
+
+cert_format_t cert_detect_format(const char* file_path) {
+    (void)file_path;
+    return CERT_FORMAT_UNKNOWN;
+}
+
+const char* cert_failure_reason_to_string(cert_failure_reason_t reason) {
+    switch (reason) {
+        case CERT_FAIL_INVALID_PEM_BLOCK: return "INVALID_PEM_BLOCK";
+        case CERT_FAIL_DER_TRUNCATED: return "DER_TRUNCATED";
+        case CERT_FAIL_DER_OVERLONG: return "DER_OVERLONG";
+        case CERT_FAIL_P12_BAD_PASSWORD: return "P12_BAD_PASSWORD";
+        case CERT_FAIL_P12_UNSUPPORTED_PBE: return "P12_UNSUPPORTED_PBE";
+        case CERT_FAIL_P12_NO_MAC: return "P12_NO_MAC";
+        case CERT_FAIL_UNSUPPORTED_SIGALG: return "UNSUPPORTED_SIGALG";
+        case CERT_FAIL_UNSUPPORTED_KEY_TYPE: return "UNSUPPORTED_KEY_TYPE";
+        case CERT_FAIL_TOO_LARGE: return "TOO_LARGE";
+        case CERT_FAIL_TOO_DEEP: return "TOO_DEEP";
+        case CERT_FAIL_TIMEOUT: return "TIMEOUT";
+        case CERT_FAIL_SANITY_LIMIT_HIT: return "SANITY_LIMIT_HIT";
+        case CERT_FAIL_MEMORY_ERROR: return "MEMORY_ERROR";
+        case CERT_FAIL_IO_ERROR: return "IO_ERROR";
+        case CERT_FAIL_UNKNOWN: return "UNKNOWN";
+        default: return "INVALID_REASON";
+    }
+}
+
+void cert_scanner_record_failure(cert_scanner_context_t* context,
+                                 cert_failure_reason_t reason,
+                                 const char* file_path) {
+    (void)context; (void)reason; (void)file_path;
+}
+
+void cert_scanner_record_parsing_failure(cert_scanner_context_t* context,
+                                         cert_failure_reason_t reason,
+                                         const char* file_path) {
+    (void)context; (void)reason; (void)file_path;
+}
+
+format_confidence_t cert_assess_format_confidence(const char* file_path,
+                                                  cert_format_t format) {
+    (void)file_path; (void)format;
+    return FORMAT_CONFIDENCE_LOW;
+}
+
+void cert_metadata_destroy(cert_metadata_t* metadata) {
+    if (!metadata) return;
+    free(metadata->subject);
+    free(metadata->issuer);
+    free(metadata->signature_algorithm);
+    free(metadata->public_key_algorithm);
+    free(metadata->serial_number);
+    free(metadata->serial_number_hex);
+    free(metadata->fingerprint_sha1);
+    free(metadata->fingerprint_sha256);
+    free(metadata);
+}
+
+void cert_extension_destroy(cert_extension_t* ext) {
+    if (!ext) return;
+    free(ext->oid);
+    free(ext->value);
+    free(ext->raw_value);
+}
+
+void trust_chain_result_destroy(trust_chain_result_t* result) {
+    if (!result) return;
+    if (result->chain_subjects) {
+        for (size_t i = 0; i < result->chain_length; i++) {
+            free(result->chain_subjects[i]);
+        }
+        free(result->chain_subjects);
+    }
+    free(result->root_ca);
+    free(result->validation_error);
+}
+
+void weak_signature_flags_destroy(weak_signature_flags_t* flags) {
+    if (!flags) return;
+    if (flags->weak_algorithms) {
+        for (size_t i = 0; i < flags->weak_count; i++) {
+            free(flags->weak_algorithms[i]);
+        }
+        free(flags->weak_algorithms);
+    }
+}
+
+void ca_info_destroy(ca_info_t* info) {
+    if (!info) return;
+    free(info->ca_name);
+    free(info->ca_oid);
+    free(info->ca_key_id);
+}
+
+void public_key_params_destroy(public_key_params_t* params) {
+    if (!params) return;
+    free(params->algorithm);
+    free(params->curve_name);
+    free(params->public_key_hash);
+    free(params->key_usage);
+    free(params->extended_key_usage);
+}
+
+char* cert_generate_asset_id(const cert_metadata_t* metadata) {
+    (void)metadata;
+    return NULL;
+}
+
+cbom_diagnostic_entry_t* cert_scanner_generate_cbom_diagnostics(
+    cert_scanner_context_t* context, size_t* count) {
+    (void)context;
+    if (count) *count = 0;
+    return NULL;
+}
+
+void cbom_diagnostic_entries_destroy(cbom_diagnostic_entry_t* entries, size_t count) {
+    if (!entries) return;
+    for (size_t i = 0; i < count; i++) {
+        free(entries[i].name);
+        free(entries[i].value);
+    }
+    free(entries);
+}
+
+#endif /* __EMSCRIPTEN__ */

@@ -42,9 +42,12 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <errno.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <openssl/evp.h>
+#endif
+#include "crypto_parser_interface.h"
 #include <ctype.h>
 #ifndef __EMSCRIPTEN__
 #include <sys/utsname.h>
@@ -501,8 +504,13 @@ static int initialize_subsystems(void) {
         g_cbom_config.thread_count = (cpu_count > 0) ? (int)cpu_count : 4;
     }
     
-    // Initialize OpenSSL
+    // Initialize crypto parser backend
+#ifdef __EMSCRIPTEN__
+    crypto_parser_init(crypto_parser_stub_ops());
+#else
     OpenSSL_add_all_algorithms();
+    crypto_parser_init(crypto_parser_openssl_ops());
+#endif
 
     // Initialize TUI if requested
     if (g_cbom_config.tui_enabled) {
@@ -624,6 +632,16 @@ static bool is_pem_certificate(const char *filepath) {
     return found_begin;
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: legacy cert parsing not available — use plugin-based scanner path */
+static crypto_asset_t* parse_pem_certificate(const char *filepath, asset_store_t *store) {
+    (void)filepath; (void)store;
+    return NULL;
+}
+
+#else /* native Linux */
+
 // Parse PEM certificate and create asset
 static crypto_asset_t* parse_pem_certificate(const char *filepath, asset_store_t *store) {
     FILE *file = fopen(filepath, "r");
@@ -703,6 +721,8 @@ static crypto_asset_t* parse_pem_certificate(const char *filepath, asset_store_t
     X509_free(cert);
     return asset;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 // Scan directory for certificates (non-recursive for walking skeleton)
 static int scan_directory_for_certificates(const char *dirpath, asset_store_t *store) {
@@ -7899,6 +7919,7 @@ int main(int argc, char *argv[]) {
     #endif
 
     // Cleanup
+    crypto_parser_shutdown();
     cleanup_subsystems();
 
     return exit_code;

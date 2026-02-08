@@ -15,11 +15,13 @@
 #ifndef KEY_SCANNER_H
 #define KEY_SCANNER_H
 
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/ec.h>
 #include <openssl/err.h>
+#endif
 #include <stdbool.h>
 #include <time.h>
 #include <stddef.h>
@@ -285,6 +287,7 @@ key_format_t key_detect_format(const char* file_path);
 key_format_t key_detect_format_from_content(const unsigned char* data, size_t len);
 bool key_is_encrypted(const char* file_path);
 
+#ifndef __EMSCRIPTEN__
 // Key parsing functions (secure memory usage)
 EVP_PKEY* key_load_from_file(const char* file_path, key_format_t format,
                              const char* password);
@@ -305,6 +308,7 @@ char* key_get_curve_name(EVP_PKEY* pkey);
 char* key_generate_id(EVP_PKEY* pkey);
 char* key_get_public_key_hash(EVP_PKEY* pkey);
 char* key_get_fingerprint(EVP_PKEY* pkey, key_format_t format);
+#endif /* !__EMSCRIPTEN__ */
 
 // Storage security detection
 storage_security_t key_detect_storage_security(const char* file_path, bool is_encrypted);
@@ -318,13 +322,17 @@ bool key_is_expired(const key_lifecycle_t* lifecycle);
 int key_days_until_expiration(const key_lifecycle_t* lifecycle);
 
 // Usage detection
+#ifndef __EMSCRIPTEN__
 key_usage_t* key_detect_usages(const char* file_path, EVP_PKEY* pkey, size_t* count);
+#endif
 key_usage_t key_detect_primary_usage(const char* file_path);
 
 // Weakness detection
+#ifndef __EMSCRIPTEN__
 bool key_is_weak(EVP_PKEY* pkey, key_type_t type);
 bool key_has_weak_size(EVP_PKEY* pkey, key_type_t type);
 char** key_get_weak_reasons(EVP_PKEY* pkey, key_type_t type, size_t* count);
+#endif
 
 // Key state detection (Phase 3 - CycloneDX conformance)
 key_state_t determine_key_state(const char* key_path, time_t* creation_date,

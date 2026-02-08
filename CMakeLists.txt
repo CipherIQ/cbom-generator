@@ -205,6 +205,8 @@ set(SOURCES
     src/crypto_registry.c
     src/version_resolver.c
     src/path_utils.c
+    src/crypto_parser_common.c
+    src/crypto_parser_openssl.c
 
 )
 
