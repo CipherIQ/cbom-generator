@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:deps": "../deps/build-wasm-deps.sh",
+    "build:deps": "./scripts/build-wasm-deps.sh",
     "build:wasm": "cd .. && emcmake cmake -B build-wasm -DCBOM_WASM=ON && emmake cmake --build build-wasm",
     "build:js": "echo 'TODO: bundle JS modules'",
     "test": "node --test tests/unit/",

@@ -2,5 +2,13 @@
 */build-wasm/
 */build/
 
+# Downloaded source trees (re-extracted from cache)
+json-c-*/
+libyaml-*/
+jansson-*/
+
+# Download cache
+.cache/
+
 # Keep source tarballs if vendored
 !*.tar.gz
