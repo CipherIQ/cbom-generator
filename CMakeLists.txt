@@ -255,7 +255,7 @@ set(SOURCES
 # WASM: swap OpenSSL backend for stub, exclude OpenSSL-dependent modules
 if(EMSCRIPTEN)
     list(REMOVE_ITEM SOURCES src/crypto_parser_openssl.c)
-    list(APPEND SOURCES src/crypto_parser_stub.c)
+    list(APPEND SOURCES src/crypto_parser_jsbridge.c src/crypto_parser_stub.c)
 
     # Remove source files that depend heavily on OpenSSL / Linux APIs
     list(REMOVE_ITEM SOURCES

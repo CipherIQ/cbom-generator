@@ -101,5 +101,10 @@ void crypto_parser_shutdown(void);
 /* Backend accessors */
 const crypto_parser_ops_t* crypto_parser_openssl_ops(void);
 const crypto_parser_ops_t* crypto_parser_stub_ops(void);
+const crypto_parser_ops_t* crypto_parser_jsbridge_ops(void);
+
+/* JS bridge lifecycle (WASM only — reads pre-parsed cert metadata from JSON) */
+int  jsbridge_parser_init(const char* json_path);
+void jsbridge_parser_shutdown(void);
 
 #endif /* CRYPTO_PARSER_INTERFACE_H */

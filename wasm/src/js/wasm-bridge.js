@@ -134,6 +134,10 @@ class WasmScanner {
             '--cyclonedx-spec', specVersion,
         ];
 
+        if (certData) {
+            args.push('--cert-metadata', '/scan/.cert-metadata.json');
+        }
+
         // ── 6. Execute scan ──
         if (onProgress) {
             onProgress({ phase: 'scanning' });

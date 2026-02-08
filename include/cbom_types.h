@@ -119,6 +119,7 @@ typedef struct {
     char **plugin_whitelist;            // Plugin names to load (NULL = load all, set by scan profile)
     size_t plugin_whitelist_count;      // Number of whitelisted plugins
     bool plugin_config_only;            // Config-only mode: skip process/port detection (set by scan profile)
+    char *cert_metadata_path;           // Pre-parsed cert metadata JSON path (WASM only)
 } cbom_config_t;
 
 #endif // CBOM_TYPES_H

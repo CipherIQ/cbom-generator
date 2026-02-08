@@ -183,6 +183,12 @@ static void print_usage(const char *program_name) {
     printf("                             industrial, telecom) or path to custom profile YAML\n");
     printf("\n");
 #endif
+#ifdef __EMSCRIPTEN__
+    printf("WASM Options:\n");
+    printf("      --cert-metadata FILE   Path to pre-parsed cert metadata JSON\n");
+    printf("                             (default: /scan/.cert-metadata.json)\n");
+    printf("\n");
+#endif
     printf("  -h, --help                 Show this help message\n");
     printf("  -v, --version              Show version information\n");
     printf("\nExamples:\n");
@@ -235,6 +241,9 @@ static int parse_arguments(int argc, char *argv[]) {
         {"yocto-manifest", required_argument, 0, 1022},
         {"rootfs-prefix", required_argument, 0, 1024},
         {"profile", required_argument, 0, 1025},
+#ifdef __EMSCRIPTEN__
+        {"cert-metadata", required_argument, 0, 1026},
+#endif
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0}
@@ -396,6 +405,14 @@ static int parse_arguments(int argc, char *argv[]) {
                 }
                 g_cbom_config.scan_profile = strdup(optarg);
                 break;
+#ifdef __EMSCRIPTEN__
+            case 1026: // --cert-metadata
+                if (g_cbom_config.cert_metadata_path) {
+                    free(g_cbom_config.cert_metadata_path);
+                }
+                g_cbom_config.cert_metadata_path = strdup(optarg);
+                break;
+#endif
             case 'h':
                 print_usage(argv[0]);
                 exit(0);
@@ -506,7 +523,16 @@ static int initialize_subsystems(void) {
     
     // Initialize crypto parser backend
 #ifdef __EMSCRIPTEN__
-    crypto_parser_init(crypto_parser_stub_ops());
+    {
+        const char* meta_path = g_cbom_config.cert_metadata_path
+                                ? g_cbom_config.cert_metadata_path
+                                : "/scan/.cert-metadata.json";
+        if (jsbridge_parser_init(meta_path) == 0) {
+            crypto_parser_init(crypto_parser_jsbridge_ops());
+        } else {
+            crypto_parser_init(crypto_parser_stub_ops());
+        }
+    }
 #else
     OpenSSL_add_all_algorithms();
     crypto_parser_init(crypto_parser_openssl_ops());
@@ -609,6 +635,11 @@ static void cleanup_subsystems(void) {
         free(g_cbom_config.yocto_manifest_path);
         g_cbom_config.yocto_manifest_path = NULL;
     }
+
+    if (g_cbom_config.cert_metadata_path) {
+        free(g_cbom_config.cert_metadata_path);
+        g_cbom_config.cert_metadata_path = NULL;
+    }
 }
 
 // Check if file is a PEM certificate
@@ -634,10 +665,71 @@ static bool is_pem_certificate(const char *filepath) {
 
 #ifdef __EMSCRIPTEN__
 
-/* WASM: legacy cert parsing not available — use plugin-based scanner path */
+/* WASM: parse certificate using pre-parsed metadata from JS bridge */
 static crypto_asset_t* parse_pem_certificate(const char *filepath, asset_store_t *store) {
-    (void)filepath; (void)store;
-    return NULL;
+    (void)store;
+
+    const crypto_parser_ops_t* ops = crypto_parser_get_ops();
+    if (!ops || !ops->parse_certificate) {
+        return NULL;
+    }
+
+    crypto_parsed_cert_t parsed;
+    int rc = ops->parse_certificate(NULL, 0, filepath, &parsed);
+    if (rc != 0) {
+        return NULL;
+    }
+
+    char* asset_name = parsed.subject ? parsed.subject : (char*)filepath;
+
+    crypto_asset_t *asset = crypto_asset_create(asset_name, ASSET_TYPE_CERTIFICATE);
+    if (asset == NULL) {
+        ops->free_cert(&parsed);
+        return NULL;
+    }
+
+    asset->location = strdup(filepath);
+    asset->algorithm = parsed.public_key_algorithm
+                       ? strdup(parsed.public_key_algorithm) : strdup("Unknown");
+    asset->key_size = (uint32_t)parsed.public_key_size;
+
+    if (asset->key_size > 0 && asset->key_size < 2048) {
+        asset->is_weak = true;
+    }
+
+    /* Build metadata JSON with cert details for serializer */
+    json_object *metadata = json_object_new_object();
+    if (parsed.subject)
+        json_object_object_add(metadata, "subject",
+                               json_object_new_string(parsed.subject));
+    if (parsed.issuer)
+        json_object_object_add(metadata, "issuer",
+                               json_object_new_string(parsed.issuer));
+    if (parsed.serial_number)
+        json_object_object_add(metadata, "serialNumber",
+                               json_object_new_string(parsed.serial_number));
+    if (parsed.signature_algorithm)
+        json_object_object_add(metadata, "signatureAlgorithm",
+                               json_object_new_string(parsed.signature_algorithm));
+    if (parsed.fingerprint_sha256)
+        json_object_object_add(metadata, "fingerprint",
+                               json_object_new_string(parsed.fingerprint_sha256));
+    json_object_object_add(metadata, "publicKeySize",
+                           json_object_new_int(parsed.public_key_size));
+    json_object_object_add(metadata, "isCa",
+                           json_object_new_boolean(parsed.is_ca));
+    if (parsed.not_before > 0)
+        json_object_object_add(metadata, "notBefore",
+                               json_object_new_int64((int64_t)parsed.not_before));
+    if (parsed.not_after > 0)
+        json_object_object_add(metadata, "notAfter",
+                               json_object_new_int64((int64_t)parsed.not_after));
+
+    asset->metadata_json = strdup(json_object_to_json_string(metadata));
+    json_object_put(metadata);
+
+    ops->free_cert(&parsed);
+    return asset;
 }
 
 #else /* native Linux */
@@ -7939,6 +8031,9 @@ int main(int argc, char *argv[]) {
     #endif
 
     // Cleanup
+#ifdef __EMSCRIPTEN__
+    jsbridge_parser_shutdown();
+#endif
     crypto_parser_shutdown();
     cleanup_subsystems();
 
