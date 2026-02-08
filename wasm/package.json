@@ -7,6 +7,7 @@
     "build:wasm": "cd .. && emcmake cmake -B build-wasm -DCBOM_WASM=ON && emmake cmake --build build-wasm",
     "build:js": "echo 'TODO: bundle JS modules'",
     "test": "node --test tests/unit/",
+    "test:archive": "node --test ../tests/js/archive.test.mjs",
     "test:browser": "npx playwright test tests/browser/",
     "package": "node scripts/package-wasm.js"
   },
