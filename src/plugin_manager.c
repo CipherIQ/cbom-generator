@@ -21,15 +21,17 @@
 #include "plugin_schema.h"       // v1.3: YAML plugin structures
 #include <stdlib.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 #include <dlfcn.h>
-#include <unistd.h>
-#include <dirent.h>              // v1.3: directory scanning
-#include <sys/stat.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
 #include <linux/seccomp.h>
 #include <linux/filter.h>
 #include <sys/syscall.h>
+#endif
+#include <unistd.h>
+#include <dirent.h>              // v1.3: directory scanning
+#include <sys/stat.h>
 #include <errno.h>
 #include <stdio.h>
 #include <time.h>
@@ -163,9 +165,11 @@ void plugin_manager_destroy(plugin_manager_t* manager) {
                 plugin->interface.cleanup(plugin);
             }
 
+#ifndef __EMSCRIPTEN__
             if (plugin->handle) {
                 dlclose(plugin->handle);
             }
+#endif
         } else if (plugin->impl_type == PLUGIN_IMPL_YAML) {
             // YAML plugin cleanup (v1.3)
             if (plugin->yaml_plugin) {
@@ -199,19 +203,30 @@ void plugin_manager_destroy(plugin_manager_t* manager) {
     free(manager);
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: binary plugins not supported — use YAML plugins instead */
+int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_path,
+                              plugin_load_flags_t flags) {
+    (void)manager; (void)plugin_path; (void)flags;
+    return PLUGIN_ERROR_LOAD_FAILED;
+}
+
+#else /* native Linux */
+
 int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_path,
                               plugin_load_flags_t flags) {
     (void)flags; // Suppress unused parameter warning for now
     if (!manager || !plugin_path) {
         return PLUGIN_ERROR_INVALID_PARAM;
     }
-    
+
     // Check if we've reached the plugin limit
     if (manager->plugin_count >= manager->max_plugins) {
         printf("ERROR: Maximum number of plugins (%u) reached\n", manager->max_plugins);
         return PLUGIN_ERROR_RESOURCE_LIMIT;
     }
-    
+
     // Verify plugin signature if security policy requires it
     if (manager->security_policy == PLUGIN_SECURITY_STRICT) {
         int verify_result = plugin_verify_signature(plugin_path, &manager->trust_config);
@@ -221,25 +236,25 @@ int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_pat
             return verify_result;
         }
     }
-    
+
     // Create plugin instance
     plugin_instance_t* instance = calloc(1, sizeof(plugin_instance_t));
     if (!instance) {
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     instance->instance_id = plugin_generate_instance_id(manager);
     instance->library_path = strdup(plugin_path);
     instance->active_limits = manager->default_limits;
-    
+
     // Initialize atomic variables
     atomic_init(&instance->is_initialized, false);
     atomic_init(&instance->is_active, false);
     atomic_init(&instance->invocation_count, 0);
     atomic_init(&instance->error_count, 0);
-    
+
     clock_gettime(CLOCK_MONOTONIC, &instance->load_time);
-    
+
     // Load the plugin library
     int load_result = plugin_load_library(instance, plugin_path);
     if (load_result != PLUGIN_SUCCESS) {
@@ -248,7 +263,7 @@ int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_pat
         atomic_fetch_add(&manager->total_plugins_failed, 1);
         return load_result;
     }
-    
+
     // Verify API version compatibility
     if (plugin_validate_api_version(instance->interface.api_version) != PLUGIN_SUCCESS) {
         printf("ERROR: Plugin API version mismatch: %s (plugin: %u, expected: %u)\n",
@@ -259,7 +274,7 @@ int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_pat
         atomic_fetch_add(&manager->total_plugins_failed, 1);
         return PLUGIN_ERROR_API_VERSION_MISMATCH;
     }
-    
+
     // Get plugin metadata
     if (instance->interface.get_metadata) {
         const plugin_metadata_t* metadata = instance->interface.get_metadata();
@@ -267,14 +282,14 @@ int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_pat
             instance->metadata = *metadata;
         }
     }
-    
+
     // Check required capabilities
     instance->has_required_capabilities = plugin_check_capabilities(&instance->metadata);
     if (!instance->has_required_capabilities) {
         printf("WARNING: Plugin %s missing required capabilities, may have limited functionality\n",
                    instance->metadata.name);
     }
-    
+
     // Apply sandboxing if enabled
     if (manager->sandboxing_enabled) {
         int sandbox_result = plugin_apply_sandboxing(instance);
@@ -282,21 +297,33 @@ int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_pat
             printf("WARNING: Failed to apply sandboxing to plugin %s\n", instance->metadata.name);
         }
     }
-    
+
     // Add to plugin list
     pthread_rwlock_wrlock(&manager->plugins_lock);
     instance->next = manager->plugins;
     manager->plugins = instance;
     manager->plugin_count++;
     pthread_rwlock_unlock(&manager->plugins_lock);
-    
+
     atomic_fetch_add(&manager->total_plugins_loaded, 1);
-    
-    printf("INFO: Successfully loaded plugin: %s v%s (ID: %u)\n", 
+
+    printf("INFO: Successfully loaded plugin: %s v%s (ID: %u)\n",
              instance->metadata.name, instance->metadata.version, instance->instance_id);
-    
+
     return PLUGIN_SUCCESS;
 }
+
+#endif /* __EMSCRIPTEN__ */
+
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no dlopen/dlsym — binary plugins not supported */
+static int plugin_load_library(plugin_instance_t* instance, const char* plugin_path) {
+    (void)instance; (void)plugin_path;
+    return PLUGIN_ERROR_LOAD_FAILED;
+}
+
+#else /* native Linux */
 
 static int plugin_load_library(plugin_instance_t* instance, const char* plugin_path) {
     // Load with RTLD_LOCAL|RTLD_NOW for symbol isolation and immediate binding
@@ -305,18 +332,18 @@ static int plugin_load_library(plugin_instance_t* instance, const char* plugin_p
         printf("ERROR: Failed to load plugin library %s: %s\n", plugin_path, dlerror());
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     // Get the plugin interface
-    const plugin_interface_t* (*get_interface)(void) = 
+    const plugin_interface_t* (*get_interface)(void) =
         dlsym(instance->handle, PLUGIN_INTERFACE_SYMBOL);
-    
+
     if (!get_interface) {
         printf("ERROR: Plugin %s missing interface symbol: %s\n", plugin_path, PLUGIN_INTERFACE_SYMBOL);
         dlclose(instance->handle);
         instance->handle = NULL;
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     const plugin_interface_t* interface = get_interface();
     if (!interface) {
         printf("ERROR: Plugin %s returned NULL interface\n", plugin_path);
@@ -324,7 +351,7 @@ static int plugin_load_library(plugin_instance_t* instance, const char* plugin_p
         instance->handle = NULL;
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     // Verify interface structure
     int verify_result = plugin_verify_interface(interface);
     if (verify_result != PLUGIN_SUCCESS) {
@@ -333,12 +360,14 @@ static int plugin_load_library(plugin_instance_t* instance, const char* plugin_p
         instance->handle = NULL;
         return verify_result;
     }
-    
+
     // Copy interface
     instance->interface = *interface;
-    
+
     return PLUGIN_SUCCESS;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 static int plugin_verify_interface(const plugin_interface_t* interface) {
     if (!interface) {
@@ -490,39 +519,51 @@ int plugin_apply_sandboxing(plugin_instance_t* instance) {
     return PLUGIN_SUCCESS;
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no setrlimit — resource limits not applicable */
+int plugin_enforce_resource_limits(plugin_instance_t* instance) {
+    (void)instance;
+    return PLUGIN_SUCCESS;
+}
+
+#else /* native Linux */
+
 int plugin_enforce_resource_limits(plugin_instance_t* instance) {
     if (!instance) {
         return PLUGIN_ERROR_INVALID_PARAM;
     }
-    
+
     const plugin_resource_limits_t* limits = &instance->active_limits;
-    
+
     // Set memory limit
     if (limits->max_memory_bytes > 0) {
         struct rlimit rlim;
         rlim.rlim_cur = limits->max_memory_bytes;
         rlim.rlim_max = limits->max_memory_bytes;
-        
+
         if (setrlimit(RLIMIT_AS, &rlim) != 0) {
-            printf("WARNING: Failed to set memory limit for plugin %s: %s\n", 
+            printf("WARNING: Failed to set memory limit for plugin %s: %s\n",
                        instance->metadata.name, strerror(errno));
         }
     }
-    
+
     // Set file descriptor limit
     if (limits->max_file_descriptors > 0) {
         struct rlimit rlim;
         rlim.rlim_cur = limits->max_file_descriptors;
         rlim.rlim_max = limits->max_file_descriptors;
-        
+
         if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
             printf("WARNING: Failed to set file descriptor limit for plugin %s: %s\n",
                        instance->metadata.name, strerror(errno));
         }
     }
-    
+
     return PLUGIN_SUCCESS;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 plugin_instance_t* plugin_manager_find_plugin(plugin_manager_t* manager, const char* name) {
     if (!manager || !name) {

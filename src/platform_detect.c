@@ -13,10 +13,13 @@
  */
 
 #include "platform_detect.h"
-#include <sys/utsname.h>
 #include <string.h>
 #include <stdbool.h>
+
+#ifndef __EMSCRIPTEN__
+#include <sys/utsname.h>
 #include <pthread.h>
+#endif
 
 /**
  * Platform detection module for CycloneDX CBOM conformance.
@@ -25,6 +28,15 @@
  * - Implementation platform (CPU architecture)
  * - Execution environment (software vs hardware)
  */
+
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no uname() or pthread — hardcode wasm32 platform */
+const char* detect_implementation_platform(void) {
+    return "wasm32";
+}
+
+#else /* native Linux */
 
 // Cached platform string for thread safety
 static const char* cached_platform = NULL;
@@ -104,6 +116,8 @@ const char* detect_implementation_platform(void) {
 
     return cached_platform;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 const char* detect_execution_environment(const char* component_path) {
     // Default to software implementation

@@ -138,6 +138,26 @@ const char* security_profile_to_string(security_profile_t profile) {
     }
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no process inspection — stub out runtime service queries */
+bool is_service_running(const char* daemon_name) {
+    (void)daemon_name;
+    return false;
+}
+
+pid_t get_service_pid(const char* daemon_name) {
+    (void)daemon_name;
+    return 0;
+}
+
+char* get_service_version(const char* daemon_name) {
+    (void)daemon_name;
+    return NULL;
+}
+
+#else /* native Linux */
+
 // Check if service is running
 bool is_service_running(const char* daemon_name) {
     if (!daemon_name) return false;
@@ -201,6 +221,8 @@ char* get_service_version(const char* daemon_name) {
     pclose(fp);
     return version;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 // Check if TLS version is weak
 bool is_weak_tls_version(const char* version) {
@@ -673,6 +695,16 @@ service_metadata_t* parse_sshd_config(const char* config_path) {
     return metadata;
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no /home directory scanning */
+int scan_user_ssh_configs(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+#else /* native Linux */
+
 // Scan user SSH client configurations (~/.ssh/config files)
 // Privacy-aware: only enabled when include_personal_data is set, redacts full paths
 int scan_user_ssh_configs(service_scanner_context_t* context) {
@@ -757,6 +789,8 @@ int scan_user_ssh_configs(service_scanner_context_t* context) {
     closedir(home_dir);
     return configs_found;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 // Parse SSH client configuration (/etc/ssh/ssh_config or ~/.ssh/config)
 protocol_metadata_t* parse_ssh_client_config(const char* config_path) {
@@ -1175,6 +1209,16 @@ protocol_metadata_t* extract_ssh_protocol(const char* config_path) {
     return protocol;
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no /proc filesystem */
+network_endpoint_t* parse_proc_net_tcp(size_t* count) {
+    if (count) *count = 0;
+    return NULL;
+}
+
+#else /* native Linux */
+
 // Parse /proc/net/tcp for listening ports
 network_endpoint_t* parse_proc_net_tcp(size_t* count) {
     if (!count) return NULL;
@@ -1229,6 +1273,8 @@ network_endpoint_t* parse_proc_net_tcp(size_t* count) {
     return endpoints;
 }
 
+#endif /* __EMSCRIPTEN__ */
+
 // ============================================================================
 // Service → Library Dependency Detection (Application Library Dependencies Gap)
 // ============================================================================
@@ -1254,6 +1300,16 @@ static bool is_crypto_library_name(const char* lib_name) {
     }
     return false;
 }
+
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no binary path resolution (/proc, readlink, access) */
+static char* get_binary_path_for_service(const service_metadata_t* metadata) {
+    (void)metadata;
+    return NULL;
+}
+
+#else /* native Linux */
 
 /**
  * Get binary executable path for a service
@@ -1317,6 +1373,8 @@ static char* get_binary_path_for_service(const service_metadata_t* metadata) {
 
     return NULL;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 /**
  * Find library asset by shared object name (fuzzy match)
@@ -1387,6 +1445,18 @@ const char* find_library_by_soname(asset_store_t* store, const char* soname) {
     free(assets);
     return result;
 }
+
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no binary inspection or ldd */
+int detect_service_library_dependencies(service_scanner_context_t* context,
+                                       crypto_asset_t* service_asset,
+                                       const service_metadata_t* metadata) {
+    (void)context; (void)service_asset; (void)metadata;
+    return 0;
+}
+
+#else /* native Linux */
 
 /**
  * Detect library dependencies for a service binary using ldd
@@ -1545,6 +1615,27 @@ int detect_service_library_dependencies(service_scanner_context_t* context,
     return libs_found;
 }
 
+#endif /* __EMSCRIPTEN__ */
+
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no binary inspection for crypto library counting */
+int count_crypto_library_dependencies(const char* process_name, pid_t pid) {
+    (void)process_name; (void)pid;
+    return 0;
+}
+
+/* WASM: stub wrapper — delegates to stubbed detect_service_library_dependencies */
+int detect_service_library_dependencies_simple(asset_store_t* store,
+                                               crypto_asset_t* service_asset,
+                                               const char* process_name,
+                                               pid_t pid) {
+    (void)store; (void)service_asset; (void)process_name; (void)pid;
+    return 0;
+}
+
+#else /* native Linux */
+
 /**
  * Count crypto library dependencies without creating assets.
  * Used for crypto relevance check before adding service to CBOM.
@@ -1654,6 +1745,33 @@ int detect_service_library_dependencies_simple(asset_store_t* store,
     // Call the full detection function
     return detect_service_library_dependencies(&temp_ctx, service_asset, &temp_metadata);
 }
+
+#endif /* __EMSCRIPTEN__ */
+
+#ifdef __EMSCRIPTEN__
+
+/* WASM: deprecated built-in detectors — all return 0 */
+int detect_apache_service(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+int detect_nginx_service(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+int detect_openssh_service(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+int detect_postfix_service(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+#else /* native Linux */
 
 // Detect Apache service
 int detect_apache_service(service_scanner_context_t* context) {
@@ -2227,6 +2345,8 @@ int detect_postfix_service(service_scanner_context_t* context) {
     return 0;
 }
 
+#endif /* __EMSCRIPTEN__ */
+
 // Create service asset
 struct crypto_asset* service_create_asset(const service_metadata_t* metadata) {
     if (!metadata) return NULL;
@@ -2414,6 +2534,21 @@ char* protocol_create_detailed_json_metadata(const protocol_metadata_t* metadata
     return result;
 }
 
+#ifdef __EMSCRIPTEN__
+
+/* WASM: no running service scanning */
+int service_scanner_scan_running_services(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+int service_scanner_scan_all(service_scanner_context_t* context) {
+    (void)context;
+    return 0;
+}
+
+#else /* native Linux */
+
 // Scan running services
 int service_scanner_scan_running_services(service_scanner_context_t* context) {
     if (!context) return -1;
@@ -2448,6 +2583,8 @@ int service_scanner_scan_all(service_scanner_context_t* context) {
 
     return total;
 }
+
+#endif /* __EMSCRIPTEN__ */
 
 // ============================================================================
 // PQC Analysis Functions (Phase 8.0)

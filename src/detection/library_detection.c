@@ -25,15 +25,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <ctype.h>
 #include <json-c/json.h>
+#include <libgen.h>
+
+#ifndef __EMSCRIPTEN__
+#include <unistd.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <elf.h>
-#include <libgen.h>
+#endif
 
 // Global CBOM configuration from main.c
 extern cbom_config_t g_cbom_config;
@@ -44,6 +47,13 @@ typedef struct {
     char* resolved_path;
 } ldd_entry_t;
 
+#ifdef __EMSCRIPTEN__
+/* WASM: stub — no ELF binaries in browser environment */
+static int is_elf_executable(const char* path) {
+    (void)path;
+    return 0;
+}
+#else
 // Simple ELF check (matches existing pattern)
 static int is_elf_executable(const char* path) {
     if (!path) return 0;
@@ -73,6 +83,7 @@ static int is_elf_executable(const char* path) {
     return (magic[0] == 0x7F && magic[1] == 'E' &&
             magic[2] == 'L' && magic[3] == 'F');
 }
+#endif /* __EMSCRIPTEN__ */
 
 // Simple cache for path -> package resolution
 typedef struct {
@@ -115,6 +126,18 @@ static void free_soname_cache(void) {
     soname_cache_initialized = false;
 }
 
+#ifdef __EMSCRIPTEN__
+/* WASM: stub — no ELF parsing, return basename as fallback */
+char* extract_soname_from_elf(const char* library_path) {
+    if (!library_path) return NULL;
+    char* path_copy = strdup(library_path);
+    if (!path_copy) return NULL;
+    char* base = basename(path_copy);
+    char* result = strdup(base);
+    free(path_copy);
+    return result;
+}
+#else
 /**
  * Extract SONAME from ELF binary using in-process parsing
  * This avoids spawning readelf for every library (performance improvement)
@@ -338,6 +361,7 @@ fallback:
         return result;
     }
 }
+#endif /* __EMSCRIPTEN__ */
 
 /**
  * Get SONAME from cache or extract from ELF
@@ -424,6 +448,13 @@ static void free_pkg_cache(void) {
     pkg_cache_initialized = false;
 }
 
+#ifdef __EMSCRIPTEN__
+/* WASM: stub — no package managers in browser environment */
+static char* resolve_package_for_path_uncached(const char* path) {
+    (void)path;
+    return NULL;
+}
+#else
 // Minimal package resolution via system tools (best-effort) - uncached
 static char* resolve_package_for_path_uncached(const char* path) {
     if (!path) return NULL;
@@ -478,6 +509,7 @@ static char* resolve_package_for_path_uncached(const char* path) {
 
     return result;
 }
+#endif /* __EMSCRIPTEN__ */
 
 // Cached wrapper (thread-safe)
 static char* cached_resolve_package_for_path(const char* path) {
@@ -548,6 +580,20 @@ static char* cached_resolve_package_for_path(const char* path) {
     return pkg;
 }
 
+#ifdef __EMSCRIPTEN__
+/* WASM: stub — no ldd/readelf in browser environment */
+static ldd_entry_t* collect_ldd_entries(const char* binary_path, size_t* out_count) {
+    (void)binary_path;
+    if (out_count) *out_count = 0;
+    return NULL;
+}
+
+/* WASM: stub — no ELF binary analysis in browser */
+binary_crypto_profile_t* analyze_binary_crypto(const char* binary_path) {
+    (void)binary_path;
+    return NULL;
+}
+#else
 // Parse ldd output and collect libraries (soname + resolved path)
 static ldd_entry_t* collect_ldd_entries(const char* binary_path, size_t* out_count) {
     if (out_count) *out_count = 0;
@@ -666,6 +712,7 @@ binary_crypto_profile_t* analyze_binary_crypto(const char* binary_path) {
 
     return profile;
 }
+#endif /* __EMSCRIPTEN__ */
 
 void free_binary_crypto_profile(binary_crypto_profile_t* profile) {
     if (!profile) return;

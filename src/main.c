@@ -46,8 +46,10 @@
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 #include <ctype.h>
+#ifndef __EMSCRIPTEN__
 #include <sys/utsname.h>
 #include <sys/sysinfo.h>
+#endif
 #include "openpgp_parser.h"
 #include "key_manager.h"
 #include "dedup.h"
@@ -1894,21 +1896,28 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
 
     // Host/system information (will be flattened into properties[] for schema compliance)
     json_object *host_info = NULL;
+#ifdef __EMSCRIPTEN__
+    /* WASM: no uname()/sysinfo() — hardcode wasm32 defaults */
+    host_info = json_object_new_object();
+    json_object_object_add(host_info, "cpu_arch", json_object_new_string("wasm32"));
+    json_object_object_add(host_info, "cpu_cores", json_object_new_int(1));
+#else
     struct utsname uname_info;
     if (uname(&uname_info) == 0) {
         host_info = json_object_new_object();
         json_object_object_add(host_info, "cpu_arch", json_object_new_string(uname_info.machine));
         json_object_object_add(host_info, "cpu_cores", json_object_new_int(sysconf(_SC_NPROCESSORS_ONLN)));
-        
+
         // Memory information
         struct sysinfo sys_info;
         if (sysinfo(&sys_info) == 0) {
-            json_object_object_add(host_info, "mem_total_mb", 
+            json_object_object_add(host_info, "mem_total_mb",
                 json_object_new_int64((sys_info.totalram * sys_info.mem_unit) / (1024 * 1024)));
         }
 
         // Note: host_info will be added to properties[] array below for schema compliance
     }
+#endif /* __EMSCRIPTEN__ */
 
     // Scan parameters
     json_object *scan_params = json_object_new_object();
