@@ -40,7 +40,7 @@ function isZeroBlock(buf, offset) {
 /**
  * Parse a tar archive buffer into an array of file entries.
  * @param {Uint8Array} buf - Raw tar data
- * @returns {Array<{name: string, data: Uint8Array, typeflag: number}>}
+ * @returns {Array<{name: string, data: Uint8Array, typeflag: number, linkname?: string}>}
  */
 function parseTar(buf) {
     const entries = [];
@@ -52,17 +52,22 @@ function parseTar(buf) {
         const name = readString(buf, offset, 100);
         const size = parseOctal(buf, offset + 124, 12);
         const typeflag = buf[offset + 156];
+        const linkname = readString(buf, offset + 157, 100);
         const prefix = readString(buf, offset + 345, 155);
 
         const fullName = prefix ? prefix + '/' + name : name;
 
         offset += TAR_BLOCK;
 
-        entries.push({
+        const entry = {
             name: fullName,
             data: buf.slice(offset, offset + size),
             typeflag,
-        });
+        };
+        if (typeflag === TYPEFLAG_SYMLINK && linkname) {
+            entry.linkname = linkname;
+        }
+        entries.push(entry);
 
         // Advance past file data (padded to 512-byte boundary)
         offset += Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
@@ -149,14 +154,14 @@ export function detectFormat(header) {
 // ── Main extraction ─────────────────────────────────────────────────
 
 /**
- * Extract an archive into a flat file map.
+ * Extract an archive into a flat file map with optional symlink info.
  * @param {File|ArrayBuffer|Uint8Array} input - The archive file
  * @param {Object} [options]
  * @param {number} [options.maxExtractedSize=1073741824] - Max total extracted size in bytes (default: 1GB)
  * @param {number} [options.maxFileCount=500000] - Max number of files
  * @param {number} [options.maxCompressionRatio=100] - Zip bomb detection threshold
  * @param {function} [options.onProgress] - Callback: ({filesExtracted, bytesExtracted, currentFile})
- * @returns {Promise<Map<string, Uint8Array>>} - Map of path → file content
+ * @returns {Promise<{files: Map<string, Uint8Array>, symlinks: Map<string, string>}>}
  * @throws {Error} if archive is invalid, too large, or a zip bomb
  */
 export async function extractArchive(input, options = {}) {
@@ -188,6 +193,7 @@ export async function extractArchive(input, options = {}) {
     const format = detectFormat(headerSlice);
 
     const files = new Map();
+    const symlinks = new Map();
     let totalBytes = 0;
     let fileCount = 0;
 
@@ -233,7 +239,12 @@ export async function extractArchive(input, options = {}) {
 
             const entries = parseTar(decompressed);
             for (const entry of entries) {
-                if (entry.typeflag === TYPEFLAG_DIR || entry.typeflag === TYPEFLAG_SYMLINK) continue;
+                if (entry.typeflag === TYPEFLAG_DIR) continue;
+                if (entry.typeflag === TYPEFLAG_SYMLINK) {
+                    const normalized = normalizePath(entry.name);
+                    if (normalized && entry.linkname) symlinks.set(normalized, entry.linkname);
+                    continue;
+                }
                 if (entry.typeflag !== TYPEFLAG_FILE && entry.typeflag !== TYPEFLAG_FILE_ALT) continue;
                 addFile(entry.name, entry.data);
             }
@@ -264,7 +275,12 @@ export async function extractArchive(input, options = {}) {
         case 'tar': {
             const entries = parseTar(data);
             for (const entry of entries) {
-                if (entry.typeflag === TYPEFLAG_DIR || entry.typeflag === TYPEFLAG_SYMLINK) continue;
+                if (entry.typeflag === TYPEFLAG_DIR) continue;
+                if (entry.typeflag === TYPEFLAG_SYMLINK) {
+                    const normalized = normalizePath(entry.name);
+                    if (normalized && entry.linkname) symlinks.set(normalized, entry.linkname);
+                    continue;
+                }
                 if (entry.typeflag !== TYPEFLAG_FILE && entry.typeflag !== TYPEFLAG_FILE_ALT) continue;
                 addFile(entry.name, entry.data);
             }
@@ -284,5 +300,5 @@ export async function extractArchive(input, options = {}) {
             throw new Error(`Unsupported archive format: ${format}`);
     }
 
-    return files;
+    return { files, symlinks };
 }

@@ -55,7 +55,7 @@ console.log(`  Read ${(archiveData.length / 1024 / 1024).toFixed(1)} MB in ${(t1
 
 // Step 2: Extract archive
 console.log('Extracting archive...');
-const files = await extractArchive(archiveData, {
+const { files, symlinks } = await extractArchive(archiveData, {
     onProgress: ({ filesExtracted }) => {
         if (filesExtracted % 100 === 0) {
             process.stdout.write(`  Extracted ${filesExtracted} files\r`);
@@ -63,7 +63,7 @@ const files = await extractArchive(archiveData, {
     },
 });
 const t2 = performance.now();
-console.log(`  Extracted ${files.size} files in ${(t2 - t1).toFixed(0)}ms`);
+console.log(`  Extracted ${files.size} files, ${symlinks.size} symlinks in ${(t2 - t1).toFixed(0)}ms`);
 
 // Step 3: Parse certificates
 console.log('Parsing certificates...');
@@ -94,6 +94,7 @@ const { cbom, warnings } = await scanner.scan(files, certData, {
     pluginSet,
     registry,
     discoverServices: true,
+    symlinks,
     onProgress: ({ phase }) => {
         if (phase === 'scanning') {
             process.stdout.write('  Scanning...\r');

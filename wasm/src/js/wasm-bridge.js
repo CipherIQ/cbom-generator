@@ -256,6 +256,7 @@ class WasmScanner {
      * @param {string} [options.registry='yocto'] - Crypto registry: 'ubuntu', 'yocto', 'openwrt', 'alpine'
      * @param {boolean} [options.discoverServices=true] - Enable config-only service discovery
      * @param {string[]} [options.scanPaths] - Override auto-detected scan directories
+     * @param {Map<string, string>} [options.symlinks] - Symlinks from archive extraction (path → target)
      * @param {function} [options.onProgress] - Progress callback
      * @returns {Promise<{cbom: Object, warnings: string[]}>}
      */
@@ -266,6 +267,7 @@ class WasmScanner {
             registry = 'yocto',
             discoverServices = true,
             scanPaths = null,
+            symlinks = null,
             onProgress = null,
         } = options;
 
@@ -304,6 +306,24 @@ class WasmScanner {
                     totalFiles: files.size,
                     currentFile: path,
                 });
+            }
+        }
+
+        // ── 3b. Create symlinks in MEMFS ──
+        // Symlinks from tar archives are preserved so that lstat()-based binary
+        // detection works for BusyBox applets, coreutils alternatives, and
+        // library version symlinks (e.g., libssl.so.3 → libssl.so.3.0.1).
+        if (symlinks && symlinks.size > 0) {
+            for (const [path, target] of symlinks) {
+                const mountPath = archivePrefix && path.startsWith(archivePrefix)
+                    ? path.slice(archivePrefix.length) : path;
+                const fullPath = '/scan/' + mountPath;
+                mkdirp(FS, parentDir(fullPath));
+                try {
+                    FS.symlink(target, fullPath);
+                } catch {
+                    // Ignore failures (e.g., path already exists as regular file)
+                }
             }
         }
 
