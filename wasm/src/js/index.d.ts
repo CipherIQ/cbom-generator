@@ -13,6 +13,8 @@ export interface ScanOptions {
     discoverServices?: boolean;
     /** Override auto-detected scan directories */
     scanPaths?: string[];
+    /** Symlinks from archive extraction (path -> target) */
+    symlinks?: Map<string, string>;
     /** Progress callback */
     onProgress?: (info: ProgressInfo) => void;
 }
@@ -24,9 +26,52 @@ export interface ProgressInfo {
     currentFile?: string;
 }
 
+export interface PqcReadiness {
+    /** PQC readiness score (0-100, higher = more quantum-safe) */
+    score: number;
+    /** Components classified as quantum-safe */
+    safe: number;
+    /** Components using transitional algorithms (e.g. AES-256, X25519) */
+    transitional: number;
+    /** Components using quantum-vulnerable algorithms (e.g. RSA, DH) */
+    unsafe: number;
+    /** Components using deprecated algorithms (e.g. MD5, DES) */
+    deprecated: number;
+    /** Total components with a PQC classification */
+    total: number;
+}
+
+export interface ComponentListItem {
+    name: string;
+    type: string;
+    assetType: string | null;
+    bomRef: string;
+    pqcStatus: 'SAFE' | 'TRANSITIONAL' | 'UNSAFE' | 'DEPRECATED' | null;
+    pqcMigrationUrgency: string | null;
+    pqcAlternative: string | null;
+    algorithmFamily: string | null;
+    primitive: string | null;
+    keySize: string | null;
+}
+
+export interface CbomSummary {
+    totalComponents: number;
+    applications: number;
+    certificates: number;
+    algorithms: number;
+    protocols: number;
+    libraries: number;
+    keys: number;
+    services: number;
+    pqcReadiness: PqcReadiness;
+    componentList: ComponentListItem[];
+}
+
 export interface ScanResult {
     cbom: CycloneDXBom;
+    summary: CbomSummary;
     warnings: string[];
+    scanTimeMs: number;
 }
 
 export interface CycloneDXBom {
@@ -67,6 +112,8 @@ export declare class WasmScanner {
 export declare function initScanner(
     options?: InitScannerOptions
 ): Promise<WasmScanner>;
+
+export declare function extractCbomSummary(cbom: CycloneDXBom): CbomSummary;
 
 export type Platform = 'ubuntu' | 'debian' | 'yocto' | 'buildroot' | 'openwrt' | 'alpine' | 'docker';
 

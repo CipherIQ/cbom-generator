@@ -8,6 +8,7 @@
  */
 
 export { initScanner } from './wasm-bridge.js';
+export { extractCbomSummary } from './cbom-summary.js';
 
 /**
  * @typedef {Object} ScanOptions

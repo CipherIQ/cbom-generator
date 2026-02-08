@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CBOM Scanner - CipherIQ</title>
+<!--
+  Browser-based CBOM scanner.
+
+  Serve from the repository root with any static server:
+    cd cbom-generator && python3 -m http.server 8080
+    Open: http://localhost:8080/wasm/web/
+
+  Requires build-wasm/ to contain cbom-generator.js + cbom-generator.wasm
+  (produced by: source ../emsdk/emsdk_env.sh && emcmake cmake -B build-wasm && emmake make -C build-wasm)
+-->
+<script type="importmap">
+{
+  "imports": {
+    "fflate": "https://esm.sh/fflate@0.8.2",
+    "pkijs": "https://esm.sh/pkijs@3.2.4",
+    "asn1js": "https://esm.sh/asn1js@3.0.5",
+    "@noble/hashes/sha256": "https://esm.sh/@noble/hashes@1.6.1/sha256"
+  }
+}
+</script>
+<style>
+/* ── Reset & Variables ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --color-safe: #28a745;
+    --color-transitional: #ffc107;
+    --color-unsafe: #dc3545;
+    --color-deprecated: #868e96;
+    --color-primary: #667eea;
+    --color-primary-dark: #5a6fd6;
+    --color-bg: #f8f9fa;
+    --color-card: #ffffff;
+    --color-text: #212529;
+    --color-text-muted: #6c757d;
+    --color-border: #dee2e6;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-bg: #1a1d23;
+        --color-card: #22252b;
+        --color-text: #e1e4e8;
+        --color-text-muted: #8b949e;
+        --color-border: #30363d;
+        --shadow: 0 1px 3px rgba(0,0,0,0.3);
+        --shadow-lg: 0 4px 12px rgba(0,0,0,0.4);
+    }
+}
+
+body {
+    font-family: var(--font);
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Layout ────────────────────────────────────────────────────────── */
+.header {
+    background: var(--color-card);
+    border-bottom: 1px solid var(--color-border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow);
+}
+.header svg { flex-shrink: 0; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .version {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-left: auto;
+}
+
+.main {
+    flex: 1;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 32px 24px;
+}
+
+.footer {
+    text-align: center;
+    padding: 16px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    border-top: 1px solid var(--color-border);
+}
+
+/* ── State visibility ──────────────────────────────────────────────── */
+.state { display: none; }
+.state.active { display: block; }
+
+/* ── Landing state ─────────────────────────────────────────────────── */
+.landing-intro {
+    text-align: center;
+    margin-bottom: 32px;
+}
+.landing-intro h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.landing-intro p {
+    color: var(--color-text-muted);
+    font-size: 15px;
+}
+
+.dropzone {
+    border: 2px dashed var(--color-border);
+    border-radius: var(--radius);
+    padding: 64px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--color-card);
+}
+.dropzone:hover, .dropzone.dragover {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 5%, var(--color-card));
+}
+.dropzone svg { margin-bottom: 16px; }
+.dropzone .drop-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.dropzone .drop-formats {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin-bottom: 12px;
+}
+.dropzone .drop-browse {
+    color: var(--color-primary);
+    font-size: 14px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.platform-select {
+    margin-top: 24px;
+    text-align: center;
+}
+.platform-select label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-right: 8px;
+}
+.platform-select select {
+    font-size: 14px;
+    padding: 6px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-card);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.privacy-note {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+
+/* ── Scanning state ────────────────────────────────────────────────── */
+.scan-info {
+    background: var(--color-card);
+    border-radius: var(--radius);
+    padding: 32px;
+    box-shadow: var(--shadow);
+    max-width: 600px;
+    margin: 0 auto;
+}
+.scan-filename {
+    font-weight: 600;
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+.scan-filesize {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin-bottom: 20px;
+}
+.progress-track {
+    width: 100%;
+    height: 8px;
+    background: var(--color-border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+.progress-bar {
+    height: 100%;
+    background: var(--color-primary);
+    border-radius: 4px;
+    transition: width 0.3s;
+    width: 0%;
+}
+.scan-phase {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+.scan-current-file {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: 18px;
+    margin-bottom: 16px;
+}
+.btn-cancel {
+    display: block;
+    margin: 0 auto;
+    padding: 8px 24px;
+    font-size: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-card);
+    color: var(--color-text);
+    cursor: pointer;
+}
+.btn-cancel:hover { background: var(--color-bg); }
+
+/* ── Results state ─────────────────────────────────────────────────── */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.summary-card {
+    background: var(--color-card);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+    text-align: center;
+}
+.summary-card .card-value {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+.summary-card .card-label {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+}
+.summary-card.pqc .card-value { font-size: 28px; }
+.pqc-green .card-value { color: var(--color-safe); }
+.pqc-yellow .card-value { color: #e6a800; }
+.pqc-red .card-value { color: var(--color-unsafe); }
+
+/* ── PQC Breakdown ─────────────────────────────────────────────────── */
+.pqc-section {
+    background: var(--color-card);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+}
+.pqc-section h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.pqc-bar-track {
+    width: 100%;
+    height: 24px;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    margin-bottom: 12px;
+    background: var(--color-border);
+}
+.pqc-bar-segment {
+    height: 100%;
+    transition: width 0.5s;
+}
+.pqc-bar-safe { background: var(--color-safe); }
+.pqc-bar-transitional { background: var(--color-transitional); }
+.pqc-bar-unsafe { background: var(--color-unsafe); }
+.pqc-bar-deprecated { background: var(--color-deprecated); }
+
+.pqc-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 13px;
+}
+.pqc-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.pqc-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ── Component table ───────────────────────────────────────────────── */
+.table-section {
+    background: var(--color-card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+.table-toolbar {
+    padding: 16px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid var(--color-border);
+}
+.table-toolbar h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-right: 12px;
+}
+.filter-btn {
+    padding: 4px 12px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-card);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.filter-btn:hover { border-color: var(--color-primary); }
+.filter-btn.active {
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+}
+.table-search {
+    margin-left: auto;
+    padding: 5px 10px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-card);
+    color: var(--color-text);
+    min-width: 180px;
+}
+.table-scroll {
+    overflow-x: auto;
+    max-height: 480px;
+    overflow-y: auto;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+th {
+    background: var(--color-bg);
+    padding: 10px 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+th:hover { color: var(--color-text); }
+td {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+}
+tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--color-card)); }
+.pqc-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.pqc-badge-SAFE { background: color-mix(in srgb, var(--color-safe) 15%, transparent); color: var(--color-safe); }
+.pqc-badge-TRANSITIONAL { background: color-mix(in srgb, var(--color-transitional) 15%, transparent); color: #9a7b00; }
+.pqc-badge-UNSAFE { background: color-mix(in srgb, var(--color-unsafe) 15%, transparent); color: var(--color-unsafe); }
+.pqc-badge-DEPRECATED { background: color-mix(in srgb, var(--color-deprecated) 15%, transparent); color: var(--color-deprecated); }
+@media (prefers-color-scheme: dark) {
+    .pqc-badge-TRANSITIONAL { color: var(--color-transitional); }
+}
+
+.table-footer {
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    border-top: 1px solid var(--color-border);
+}
+
+/* ── Action buttons ────────────────────────────────────────────────── */
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 24px;
+}
+.btn {
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-card);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+.btn:hover { box-shadow: var(--shadow); }
+.btn-primary {
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+}
+.btn-primary:hover { background: var(--color-primary-dark); }
+
+/* ── Error state ───────────────────────────────────────────────────── */
+.error-box {
+    background: color-mix(in srgb, var(--color-unsafe) 8%, var(--color-card));
+    border: 1px solid var(--color-unsafe);
+    border-radius: var(--radius);
+    padding: 24px;
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: center;
+}
+.error-box h3 {
+    color: var(--color-unsafe);
+    margin-bottom: 8px;
+}
+.error-box p {
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+/* ── Scan time badge ───────────────────────────────────────────────── */
+.scan-time {
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin-bottom: 24px;
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────── -->
+<header class="header">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="6" fill="#667eea"/>
+        <path d="M8 14 L12 18 L20 10" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h1>CBOM Scanner</h1>
+    <span class="version">v1.9.4</span>
+</header>
+
+<!-- ── Main content ────────────────────────────────────────────────── -->
+<div class="main">
+
+    <!-- Landing state -->
+    <div id="state-landing" class="state active">
+        <div class="landing-intro">
+            <h2>Cryptographic Bill of Materials</h2>
+            <p>Analyze firmware images for cryptographic assets, certificates, and PQC readiness</p>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <path d="M24 32V16M24 16L18 22M24 16L30 22" stroke="var(--color-text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M40 30V36C40 38.2 38.2 40 36 40H12C9.8 40 8 38.2 8 36V30" stroke="var(--color-text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="drop-title">Drop firmware image here</div>
+            <div class="drop-formats">Supports .tar.gz, .tgz, .zip, .tar</div>
+            <div class="drop-browse">or click to browse</div>
+        </div>
+        <input type="file" id="file-input" accept=".tar.gz,.tgz,.tar,.zip,.gz" hidden>
+
+        <div class="platform-select">
+            <label for="platform">Target Platform:</label>
+            <select id="platform">
+                <option value="yocto" selected>Yocto / Buildroot</option>
+                <option value="ubuntu">Ubuntu / Debian</option>
+                <option value="openwrt">OpenWrt</option>
+                <option value="alpine">Alpine / Docker</option>
+            </select>
+        </div>
+
+        <div class="privacy-note">100% client-side. Your data never leaves this browser.</div>
+    </div>
+
+    <!-- Scanning state -->
+    <div id="state-scanning" class="state">
+        <div class="scan-info">
+            <div class="scan-filename" id="scan-filename"></div>
+            <div class="scan-filesize" id="scan-filesize"></div>
+            <div class="progress-track">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <div class="scan-phase" id="scan-phase">Preparing...</div>
+            <div class="scan-current-file" id="scan-current-file"></div>
+            <button class="btn-cancel" id="btn-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Error state -->
+    <div id="state-error" class="state">
+        <div class="error-box">
+            <h3>Scan Failed</h3>
+            <p id="error-message"></p>
+            <button class="btn btn-primary" id="btn-error-retry">Scan Another File</button>
+        </div>
+    </div>
+
+    <!-- Results state -->
+    <div id="state-results" class="state">
+        <div class="scan-time" id="scan-time"></div>
+
+        <div class="summary-cards" id="summary-cards"></div>
+
+        <div class="pqc-section" id="pqc-section">
+            <h3>PQC Readiness Breakdown</h3>
+            <div class="pqc-bar-track" id="pqc-bar"></div>
+            <div class="pqc-legend" id="pqc-legend"></div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-toolbar">
+                <h3>Components</h3>
+                <div id="filter-buttons"></div>
+                <input type="text" class="table-search" id="table-search" placeholder="Search components...">
+            </div>
+            <div class="table-scroll">
+                <table>
+                    <thead id="table-head"></thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+            <div class="table-footer" id="table-footer"></div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-primary" id="btn-download">Download CBOM (JSON)</button>
+            <button class="btn" id="btn-scan-another">Scan Another File</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Footer ──────────────────────────────────────────────────────── -->
+<footer class="footer">
+    Powered by CipherIQ &middot; cbom-generator v1.9.4
+</footer>
+
+<!-- ── Application Script ──────────────────────────────────────────── -->
+<script type="module">
+
+// ── Imports (resolved via importmap for npm packages) ───────────────
+import { extractArchive } from '../src/js/archive.js';
+import { parseCryptoAssets } from '../src/js/cert-parser.js';
+import { extractCbomSummary } from '../src/js/cbom-summary.js';
+
+// ── Configuration ───────────────────────────────────────────────────
+// Paths are relative to the repo root when served from there.
+// Adjust WASM_BASE if serving from a different location.
+const WASM_BASE = '../../build-wasm';
+const PLUGIN_BASE = '../../plugins';
+const REGISTRY_BASE = '../../registry';
+
+const PLATFORMS = {
+    yocto:   { pluginSet: 'embedded', registry: 'yocto' },
+    ubuntu:  { pluginSet: 'ubuntu',   registry: 'ubuntu' },
+    openwrt: { pluginSet: 'embedded', registry: 'openwrt' },
+    alpine:  { pluginSet: 'ubuntu',   registry: 'alpine' },
+};
+
+// Plugin manifest — filenames per plugin set.
+// Kept inline to avoid directory listing (not available on static servers).
+const PLUGIN_FILES = {
+    embedded: [
+        'avahi.yaml', 'b2sum.yaml', 'balena-engine.yaml', 'bluez.yaml',
+        'chrony.yaml', 'dbus.yaml', 'dropbear.yaml', 'git.yaml',
+        'iwd.yaml', 'k3s.yaml', 'lighttpd.yaml', 'md5sum.yaml',
+        'mosquitto.yaml', 'NetworkManager.yaml', 'node-red.yaml',
+        'openplc.yaml', 'rsync.yaml', 'sha1sum.yaml', 'sha224sum.yaml',
+        'sha256sum.yaml', 'sha384sum.yaml', 'sha512sum.yaml',
+        'strongswan.yaml', 'systemd.yaml', 'tinc.yaml', 'udev.yaml',
+        'uhttpd.yaml', 'wpa_supplicant.yaml',
+    ],
+    ubuntu: null,  // loaded on demand if needed
+};
+
+// ── State management ────────────────────────────────────────────────
+
+let scanResult = null;
+let cancelled = false;
+
+function setState(name) {
+    document.querySelectorAll('.state').forEach(el => el.classList.remove('active'));
+    document.getElementById(`state-${name}`).classList.add('active');
+}
+
+// ── DOM references ──────────────────────────────────────────────────
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const platformSelect = document.getElementById('platform');
+
+// ── File handling ───────────────────────────────────────────────────
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+});
+fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+    fileInput.value = '';
+});
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+}
+
+async function handleFile(file) {
+    if (file.size > 2 * 1073741824) {
+        showError('File too large (> 2 GB). Please use the cbom-generator CLI tool for large images.');
+        return;
+    }
+    if (file.size > 500 * 1048576) {
+        if (!confirm(`This file is ${formatSize(file.size)}. Large files may take a while. Continue?`)) {
+            return;
+        }
+    }
+
+    setState('scanning');
+    document.getElementById('scan-filename').textContent = file.name;
+    document.getElementById('scan-filesize').textContent = formatSize(file.size);
+
+    cancelled = false;
+    document.getElementById('btn-cancel').onclick = () => {
+        cancelled = true;
+        setState('landing');
+    };
+
+    try {
+        await runScan(file);
+    } catch (err) {
+        if (cancelled) {
+            setState('landing');
+        } else {
+            showError(err.message || 'An unexpected error occurred during scanning.');
+        }
+    }
+}
+
+function showError(message) {
+    document.getElementById('error-message').textContent = message;
+    setState('error');
+}
+
+document.getElementById('btn-error-retry').addEventListener('click', () => setState('landing'));
+document.getElementById('btn-scan-another').addEventListener('click', () => {
+    scanResult = null;
+    setState('landing');
+});
+
+// ── Progress helpers ────────────────────────────────────────────────
+
+function setProgress(pct, phase, currentFile) {
+    if (pct !== undefined) document.getElementById('progress-bar').style.width = pct + '%';
+    if (phase) document.getElementById('scan-phase').textContent = phase;
+    if (currentFile !== undefined) document.getElementById('scan-current-file').textContent = currentFile || '';
+}
+
+function checkCancelled() {
+    if (cancelled) throw new Error('Cancelled');
+}
+
+// ── MEMFS helpers ───────────────────────────────────────────────────
+
+function parentDir(path) {
+    const idx = path.lastIndexOf('/');
+    return idx <= 0 ? '/' : path.substring(0, idx);
+}
+
+function mkdirp(FS, path) {
+    if (path === '/' || path === '') return;
+    try { FS.stat(path); return; } catch {}
+    mkdirp(FS, parentDir(path));
+    try { FS.mkdir(path); } catch {}
+}
+
+// ── Archive prefix detection ────────────────────────────────────────
+
+function detectArchivePrefix(files) {
+    if (files.size === 0) return null;
+    const systemDirs = new Set([
+        'usr', 'etc', 'lib', 'lib64', 'bin', 'sbin',
+        'var', 'opt', 'home', 'root', 'tmp', 'dev',
+        'proc', 'sys', 'run', 'srv', 'mnt', 'media',
+    ]);
+    let commonFirst = null;
+    for (const path of files.keys()) {
+        const firstSeg = path.split('/')[0];
+        if (commonFirst === null) commonFirst = firstSeg;
+        else if (firstSeg !== commonFirst) return null;
+    }
+    if (!commonFirst || systemDirs.has(commonFirst)) return null;
+    const prefix = commonFirst + '/';
+    const markers = ['usr/', 'etc/', 'lib/'];
+    const hasRootfs = markers.some(m =>
+        Array.from(files.keys()).some(p => p.startsWith(prefix + m))
+    );
+    return hasRootfs ? prefix : null;
+}
+
+// ── Scan path detection ─────────────────────────────────────────────
+
+function determineScanPaths(FS) {
+    const candidates = [
+        '/scan/usr/bin', '/scan/usr/sbin', '/scan/usr/lib',
+        '/scan/usr/lib64', '/scan/usr/local/bin', '/scan/usr/local/lib',
+        '/scan/etc', '/scan/lib',
+    ];
+    const detected = candidates.filter(p => {
+        try { return FS.isDir(FS.stat(p).mode); } catch { return false; }
+    });
+    return detected.length > 0 ? detected : ['/scan'];
+}
+
+// ── Plugin/registry loading via fetch ───────────────────────────────
+
+async function fetchPluginFiles(pluginSet) {
+    let filenames = PLUGIN_FILES[pluginSet];
+    if (!filenames) {
+        // For ubuntu: fetch manifest or fall back to listing
+        const resp = await fetch(`${PLUGIN_BASE}/${pluginSet}/`);
+        if (!resp.ok) return {};
+        const text = await resp.text();
+        // Simple link extraction from directory listing
+        filenames = [...text.matchAll(/href="([^"]+\.ya?ml)"/gi)].map(m => m[1]);
+    }
+    const plugins = {};
+    const results = await Promise.allSettled(
+        filenames.map(async f => {
+            const resp = await fetch(`${PLUGIN_BASE}/${pluginSet}/${f}`);
+            if (resp.ok) plugins[f] = await resp.text();
+        })
+    );
+    return plugins;
+}
+
+async function fetchRegistryFile(registry) {
+    const resp = await fetch(`${REGISTRY_BASE}/crypto-registry-${registry}.yaml`);
+    if (!resp.ok) throw new Error(`Failed to load registry: crypto-registry-${registry}.yaml`);
+    return resp.text();
+}
+
+// ── Main scan pipeline ──────────────────────────────────────────────
+
+async function runScan(file) {
+    const t0 = performance.now();
+
+    // Phase 1: Read file
+    setProgress(5, 'Reading file...');
+    const data = new Uint8Array(await file.arrayBuffer());
+    checkCancelled();
+
+    // Phase 2: Extract archive
+    setProgress(10, 'Extracting archive...');
+    let fileCount = 0;
+    const { files, symlinks } = await extractArchive(data, {
+        onProgress: ({ filesExtracted, currentFile }) => {
+            fileCount = filesExtracted;
+            if (filesExtracted % 50 === 0) {
+                setProgress(10 + Math.min(filesExtracted / 50, 15),
+                    `Extracting archive... (${filesExtracted} files)`, currentFile);
+            }
+        },
+    });
+    checkCancelled();
+    setProgress(25, `Extracted ${files.size} files`);
+
+    // Phase 3: Parse certificates
+    setProgress(28, 'Analyzing certificates...');
+    const certData = await parseCryptoAssets(files);
+    checkCancelled();
+    setProgress(35, `Found ${certData.certs.length} certificates, ${certData.keys.length} keys`);
+
+    // Phase 4: Load WASM module + plugins + registry in parallel
+    setProgress(38, 'Loading WASM scanner...');
+    const platform = PLATFORMS[platformSelect.value] || PLATFORMS.yocto;
+
+    const [wasmModule, plugins, registryYaml] = await Promise.all([
+        import(`${WASM_BASE}/cbom-generator.js`).then(m => m.default),
+        fetchPluginFiles(platform.pluginSet),
+        fetchRegistryFile(platform.registry),
+    ]);
+    checkCancelled();
+    setProgress(50, 'Initializing scanner...');
+
+    // Phase 5: Create WASM Module instance
+    const Module = await wasmModule({
+        print: () => {},
+        printErr: (line) => {
+            if (line.startsWith('[INFO]') || line.startsWith('[WARN]') || line.startsWith('[ERROR]')) {
+                setProgress(undefined, undefined, line);
+            }
+        },
+    });
+    const FS = Module.FS;
+    checkCancelled();
+
+    // Phase 6: Mount files into MEMFS
+    setProgress(55, 'Mounting files...');
+    mkdirp(FS, '/scan');
+    mkdirp(FS, '/output');
+
+    const archivePrefix = detectArchivePrefix(files);
+    let mounted = 0;
+    for (const [path, fileData] of files) {
+        const mountPath = archivePrefix && path.startsWith(archivePrefix)
+            ? path.slice(archivePrefix.length) : path;
+        const fullPath = '/scan/' + mountPath;
+        mkdirp(FS, parentDir(fullPath));
+        FS.writeFile(fullPath, fileData);
+        mounted++;
+        if (mounted % 100 === 0) {
+            setProgress(55 + (mounted / files.size) * 10,
+                `Mounting files (${mounted}/${files.size})`,
+                mountPath);
+            // Yield to keep UI responsive
+            await new Promise(r => setTimeout(r, 0));
+        }
+    }
+    checkCancelled();
+
+    // Mount symlinks
+    if (symlinks && symlinks.size > 0) {
+        for (const [path, target] of symlinks) {
+            const mountPath = archivePrefix && path.startsWith(archivePrefix)
+                ? path.slice(archivePrefix.length) : path;
+            const fullPath = '/scan/' + mountPath;
+            mkdirp(FS, parentDir(fullPath));
+            try { FS.symlink(target, fullPath); } catch {}
+        }
+    }
+
+    // Mount plugins
+    mkdirp(FS, '/plugins');
+    for (const [filename, content] of Object.entries(plugins)) {
+        FS.writeFile(`/plugins/${filename}`, content);
+    }
+
+    // Mount registry
+    mkdirp(FS, '/registry');
+    FS.writeFile(`/registry/crypto-registry-${platform.registry}.yaml`, registryYaml);
+
+    // Write cert metadata
+    if (certData) {
+        let adjusted = certData;
+        if (archivePrefix) {
+            adjusted = {
+                ...certData,
+                certs: (certData.certs || []).map(c =>
+                    c.filePath && c.filePath.startsWith(archivePrefix)
+                        ? { ...c, filePath: c.filePath.slice(archivePrefix.length) } : c
+                ),
+                keys: (certData.keys || []).map(k =>
+                    k.filePath && k.filePath.startsWith(archivePrefix)
+                        ? { ...k, filePath: k.filePath.slice(archivePrefix.length) } : k
+                ),
+            };
+        }
+        FS.writeFile('/scan/.cert-metadata.json', JSON.stringify(adjusted));
+    }
+    checkCancelled();
+
+    // Phase 7: Build argv and run scan
+    setProgress(70, 'Scanning cryptographic assets...');
+    const argv = [
+        '--cross-arch',
+        '--rootfs-prefix', '/scan',
+        '--discover-services',
+        '--plugin-dir', '/plugins',
+        '--crypto-registry', `/registry/crypto-registry-${platform.registry}.yaml`,
+        '--format', 'cyclonedx',
+        '--cyclonedx-spec', '1.7',
+        '-o', '/output/cbom.json',
+    ];
+    if (certData) argv.push('--cert-metadata', '/scan/.cert-metadata.json');
+    argv.push(...determineScanPaths(FS));
+
+    let exitCode;
+    try {
+        exitCode = Module.callMain(argv);
+    } catch (e) {
+        if (typeof e === 'object' && typeof e.status === 'number') {
+            exitCode = e.status;
+        } else {
+            throw new Error(`WASM scan failed: ${e.message || e}`);
+        }
+    }
+
+    // Phase 8: Read output
+    setProgress(95, 'Reading results...');
+    let outputData;
+    try {
+        outputData = FS.readFile('/output/cbom.json', { encoding: 'utf8' });
+    } catch {
+        throw new Error(`Scan produced no output (exit code: ${exitCode}).`);
+    }
+
+    const cbom = JSON.parse(outputData);
+    const scanTimeMs = Math.round(performance.now() - t0);
+
+    scanResult = {
+        cbom,
+        summary: extractCbomSummary(cbom),
+        warnings: [],
+        scanTimeMs,
+    };
+
+    setProgress(100, 'Complete');
+    renderResults(scanResult);
+    setState('results');
+}
+
+// ── Results rendering ───────────────────────────────────────────────
+
+function renderResults(result) {
+    const { summary, scanTimeMs } = result;
+
+    document.getElementById('scan-time').textContent =
+        `Scan completed in ${(scanTimeMs / 1000).toFixed(1)}s`;
+
+    // Summary cards
+    const cards = document.getElementById('summary-cards');
+    const pqcScore = summary.pqcReadiness.score;
+    const pqcColorClass = pqcScore >= 80 ? 'pqc-green' : pqcScore >= 50 ? 'pqc-yellow' : 'pqc-red';
+
+    cards.innerHTML = `
+        <div class="summary-card">
+            <div class="card-value">${summary.totalComponents}</div>
+            <div class="card-label">Total Components</div>
+        </div>
+        <div class="summary-card">
+            <div class="card-value">${summary.certificates}</div>
+            <div class="card-label">Certificates</div>
+        </div>
+        <div class="summary-card">
+            <div class="card-value">${summary.algorithms}</div>
+            <div class="card-label">Algorithms</div>
+        </div>
+        <div class="summary-card">
+            <div class="card-value">${summary.libraries}</div>
+            <div class="card-label">Libraries</div>
+        </div>
+        <div class="summary-card">
+            <div class="card-value">${summary.applications}</div>
+            <div class="card-label">Applications</div>
+        </div>
+        <div class="summary-card pqc ${pqcColorClass}">
+            <div class="card-value">${pqcScore}%</div>
+            <div class="card-label">PQC Readiness</div>
+        </div>
+    `;
+
+    // PQC breakdown bar
+    const pqc = summary.pqcReadiness;
+    const total = pqc.total || 1;
+    document.getElementById('pqc-bar').innerHTML = `
+        <div class="pqc-bar-segment pqc-bar-safe" style="width:${(pqc.safe/total*100).toFixed(1)}%"></div>
+        <div class="pqc-bar-segment pqc-bar-transitional" style="width:${(pqc.transitional/total*100).toFixed(1)}%"></div>
+        <div class="pqc-bar-segment pqc-bar-unsafe" style="width:${(pqc.unsafe/total*100).toFixed(1)}%"></div>
+        <div class="pqc-bar-segment pqc-bar-deprecated" style="width:${(pqc.deprecated/total*100).toFixed(1)}%"></div>
+    `;
+
+    document.getElementById('pqc-legend').innerHTML = `
+        <div class="pqc-legend-item"><div class="pqc-legend-dot" style="background:var(--color-safe)"></div>Safe (${pqc.safe})</div>
+        <div class="pqc-legend-item"><div class="pqc-legend-dot" style="background:var(--color-transitional)"></div>Transitional (${pqc.transitional})</div>
+        <div class="pqc-legend-item"><div class="pqc-legend-dot" style="background:var(--color-unsafe)"></div>Unsafe (${pqc.unsafe})</div>
+        <div class="pqc-legend-item"><div class="pqc-legend-dot" style="background:var(--color-deprecated)"></div>Deprecated (${pqc.deprecated})</div>
+    `;
+
+    renderTable(summary.componentList);
+
+    document.getElementById('btn-download').onclick = () => {
+        const blob = new Blob([JSON.stringify(result.cbom, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cbom.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+}
+
+// ── Component table ─────────────────────────────────────────────────
+
+let tableData = [];
+let activeFilter = 'all';
+let searchQuery = '';
+let sortCol = 'name';
+let sortAsc = true;
+
+function getDisplayType(item) {
+    return item.assetType || item.type;
+}
+
+function renderTable(componentList) {
+    tableData = componentList;
+    activeFilter = 'all';
+    searchQuery = '';
+    sortCol = 'name';
+    sortAsc = true;
+
+    const types = new Map();
+    types.set('all', componentList.length);
+    for (const c of componentList) {
+        const t = getDisplayType(c);
+        types.set(t, (types.get(t) || 0) + 1);
+    }
+
+    const filterDiv = document.getElementById('filter-buttons');
+    filterDiv.innerHTML = '';
+    for (const [type, count] of types) {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn' + (type === 'all' ? ' active' : '');
+        btn.textContent = `${type === 'all' ? 'All' : capitalize(type)} (${count})`;
+        btn.dataset.filter = type;
+        btn.addEventListener('click', () => {
+            activeFilter = type;
+            filterDiv.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            updateTable();
+        });
+        filterDiv.appendChild(btn);
+    }
+
+    const searchInput = document.getElementById('table-search');
+    searchInput.value = '';
+    searchInput.oninput = () => {
+        searchQuery = searchInput.value.toLowerCase();
+        updateTable();
+    };
+
+    const thead = document.getElementById('table-head');
+    const cols = [
+        { key: 'name', label: 'Name' },
+        { key: 'type', label: 'Type' },
+        { key: 'algorithmFamily', label: 'Algorithm Family' },
+        { key: 'keySize', label: 'Key Size' },
+        { key: 'pqcStatus', label: 'PQC Status' },
+        { key: 'pqcMigrationUrgency', label: 'Urgency' },
+    ];
+    thead.innerHTML = '<tr>' + cols.map(c =>
+        `<th data-col="${c.key}">${c.label}</th>`
+    ).join('') + '</tr>';
+
+    thead.querySelectorAll('th').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            if (sortCol === col) sortAsc = !sortAsc;
+            else { sortCol = col; sortAsc = true; }
+            updateTable();
+        });
+    });
+
+    updateTable();
+}
+
+function capitalize(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function updateTable() {
+    let filtered = tableData;
+
+    if (activeFilter !== 'all') {
+        filtered = filtered.filter(c => getDisplayType(c) === activeFilter);
+    }
+
+    if (searchQuery) {
+        filtered = filtered.filter(c =>
+            (c.name || '').toLowerCase().includes(searchQuery) ||
+            (c.algorithmFamily || '').toLowerCase().includes(searchQuery) ||
+            (c.pqcStatus || '').toLowerCase().includes(searchQuery)
+        );
+    }
+
+    filtered.sort((a, b) => {
+        let va = a[sortCol] || '';
+        let vb = b[sortCol] || '';
+        if (typeof va === 'string') va = va.toLowerCase();
+        if (typeof vb === 'string') vb = vb.toLowerCase();
+        if (va < vb) return sortAsc ? -1 : 1;
+        if (va > vb) return sortAsc ? 1 : -1;
+        return 0;
+    });
+
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = filtered.map(c => `
+        <tr>
+            <td>${esc(c.name || '')}</td>
+            <td>${esc(getDisplayType(c))}</td>
+            <td>${esc(c.algorithmFamily || '-')}</td>
+            <td>${esc(c.keySize || '-')}</td>
+            <td>${c.pqcStatus ? `<span class="pqc-badge pqc-badge-${c.pqcStatus}">${c.pqcStatus}</span>` : '-'}</td>
+            <td>${esc(c.pqcMigrationUrgency || '-')}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('table-footer').textContent =
+        `Showing ${filtered.length} of ${tableData.length} components`;
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+</script>
+</body>
+</html>

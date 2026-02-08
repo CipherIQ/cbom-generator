@@ -15,6 +15,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractCbomSummary } from './cbom-summary.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
@@ -272,6 +273,7 @@ class WasmScanner {
         } = options;
 
         const warnings = [];
+        const scanStart = performance.now();
 
         // ── 1. Create fresh Module instance ──
         const Module = await this.#factory({
@@ -439,7 +441,12 @@ class WasmScanner {
             throw new Error(`Failed to parse CBOM output as JSON: ${e.message}`);
         }
 
-        return { cbom, warnings };
+        return {
+            cbom,
+            summary: extractCbomSummary(cbom),
+            warnings,
+            scanTimeMs: Math.round(performance.now() - scanStart),
+        };
     }
 
     /**

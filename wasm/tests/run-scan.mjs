@@ -90,7 +90,7 @@ console.log(`  Initialized in ${(t4 - t3).toFixed(0)}ms`);
 
 // Step 5: Run WASM scan
 console.log(`Scanning (pluginSet=${pluginSet}, registry=${registry})...`);
-const { cbom, warnings } = await scanner.scan(files, certData, {
+const { cbom, summary, warnings, scanTimeMs } = await scanner.scan(files, certData, {
     pluginSet,
     registry,
     discoverServices: true,
@@ -113,20 +113,17 @@ const t6 = performance.now();
 console.log('');
 console.log('=== WASM Scan Summary ===');
 console.log(`Output: ${opts.output}`);
-console.log(`Components: ${cbom.components?.length || 0}`);
-
-if (cbom.components) {
-    const byType = {};
-    for (const comp of cbom.components) {
-        const key = comp.cryptoProperties?.assetType || comp.type || 'unknown';
-        byType[key] = (byType[key] || 0) + 1;
-    }
-    for (const [type, count] of Object.entries(byType).sort()) {
-        console.log(`  ${type}: ${count}`);
-    }
-}
-
+console.log(`Components: ${summary.totalComponents}`);
+console.log(`  Applications:  ${summary.applications}`);
+console.log(`  Libraries:     ${summary.libraries}`);
+console.log(`  Certificates:  ${summary.certificates}`);
+console.log(`  Algorithms:    ${summary.algorithms}`);
+console.log(`  Protocols:     ${summary.protocols}`);
+console.log(`  Keys:          ${summary.keys}`);
 console.log(`Dependencies: ${cbom.dependencies?.length || 0}`);
+console.log(`PQC Readiness: ${summary.pqcReadiness.score}%`);
+console.log(`  Safe: ${summary.pqcReadiness.safe}  Transitional: ${summary.pqcReadiness.transitional}  Unsafe: ${summary.pqcReadiness.unsafe}  Deprecated: ${summary.pqcReadiness.deprecated}`);
+console.log(`Scan time: ${scanTimeMs}ms`);
 console.log(`Total time: ${((t6 - t0) / 1000).toFixed(1)}s`);
 
 if (warnings.length > 0) {
