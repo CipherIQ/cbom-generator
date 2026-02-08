@@ -79,7 +79,8 @@ console.log('Initializing WASM scanner...');
 const scanner = await initScanner({
     onStderr: (line) => {
         // Show important stderr lines (INFO/WARNING/ERROR)
-        if (line.startsWith('INFO:') || line.startsWith('WARNING:') || line.startsWith('ERROR:')) {
+        if (line.startsWith('INFO:') || line.startsWith('WARNING:') || line.startsWith('ERROR:') ||
+            line.startsWith('[INFO]') || line.startsWith('[WARN]') || line.startsWith('[ERROR]')) {
             console.log(`  [C] ${line}`);
         }
     },

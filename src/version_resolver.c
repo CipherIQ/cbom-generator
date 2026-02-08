@@ -355,7 +355,7 @@ char* parse_verneed_version(const char* binary_path, const char* target_soname) 
 /**
  * Extract semantic version from version tag (e.g., "OPENSSL_3.0.3" -> "3.0.3")
  */
-static char* extract_version_from_tag(const char* tag) {
+static char* __attribute__((unused)) extract_version_from_tag(const char* tag) {
     if (!tag) return NULL;
 
     // Try each known pattern

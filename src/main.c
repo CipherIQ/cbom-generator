@@ -816,7 +816,7 @@ static crypto_asset_t* parse_pem_certificate(const char *filepath, asset_store_t
 
 #endif /* __EMSCRIPTEN__ */
 
-// Scan directory for certificates (non-recursive for walking skeleton)
+// Scan directory for certificates (recursive)
 static int scan_directory_for_certificates(const char *dirpath, asset_store_t *store) {
     DIR *dir = opendir(dirpath);
     if (dir == NULL) {
@@ -824,49 +824,74 @@ static int scan_directory_for_certificates(const char *dirpath, asset_store_t *s
                        "directory_scanner", "Failed to open directory", dirpath);
         return -1;
     }
-    
+
     struct dirent *entry;
     int found_count = 0;
-    
+
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type != DT_REG) {
-            continue; // Skip non-regular files
-        }
-        
-        // Check for certificate file extensions
         const char *name = entry->d_name;
+
+        // Skip . and ..
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+
+        // Build full path
+        char filepath[PATH_MAX];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, name);
+
+        struct stat st;
+        if (stat(filepath, &st) != 0) {
+            continue;
+        }
+
+        // Recurse into subdirectories
+        if (S_ISDIR(st.st_mode)) {
+            // Skip hidden directories and system dirs
+            if (name[0] == '.' ||
+                strcmp(name, "proc") == 0 ||
+                strcmp(name, "sys") == 0 ||
+                strcmp(name, "dev") == 0) {
+                continue;
+            }
+            int sub_count = scan_directory_for_certificates(filepath, store);
+            if (sub_count > 0) found_count += sub_count;
+            continue;
+        }
+
+        if (!S_ISREG(st.st_mode)) {
+            continue;
+        }
+
+        // Check for certificate file extensions
         size_t len = strlen(name);
-        
+
         bool is_cert_file = false;
         if (len > 4) {
             const char *ext = name + len - 4;
-            if (strcasecmp(ext, ".pem") == 0 || 
+            if (strcasecmp(ext, ".pem") == 0 ||
                 strcasecmp(ext, ".crt") == 0 ||
                 strcasecmp(ext, ".cer") == 0) {
                 is_cert_file = true;
             }
         }
-        
+
         if (!is_cert_file) {
             continue;
         }
-        
-        // Build full path
-        char filepath[PATH_MAX];
-        snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, name);
-        
+
         // Check if it's actually a PEM certificate
         if (!is_pem_certificate(filepath)) {
             continue;
         }
-        
+
         // Parse certificate
         crypto_asset_t *asset = parse_pem_certificate(filepath, store);
         if (asset != NULL) {
             if (asset_store_add(store, asset) == 0) {
                 found_count++;
                 completion_tracker_task_completed(g_completion_tracker);
-                ERROR_LOG_INFO(g_error_collector, "cert_scanner", 
+                ERROR_LOG_INFO(g_error_collector, "cert_scanner",
                               "Found certificate", filepath);
             } else {
                 crypto_asset_destroy(asset);
@@ -876,7 +901,7 @@ static int scan_directory_for_certificates(const char *dirpath, asset_store_t *s
             completion_tracker_task_failed(g_completion_tracker);
         }
     }
-    
+
     closedir(dir);
     return found_count;
 }
@@ -905,6 +930,150 @@ static int run_basic_certificate_scan(asset_store_t *store) {
 
     return total_cert_count >= 0 ? 0 : -1;
 }
+
+#ifdef __EMSCRIPTEN__
+
+// Check if file contains PEM key headers
+static bool is_pem_key_file(const char *filepath) {
+    FILE *file = fopen(filepath, "r");
+    if (!file) return false;
+
+    char line[256];
+    bool found = false;
+
+    while (fgets(line, sizeof(line), file)) {
+        if (strstr(line, "-----BEGIN PRIVATE KEY-----") ||
+            strstr(line, "-----BEGIN RSA PRIVATE KEY-----") ||
+            strstr(line, "-----BEGIN EC PRIVATE KEY-----") ||
+            strstr(line, "-----BEGIN ENCRYPTED PRIVATE KEY-----") ||
+            strstr(line, "-----BEGIN OPENSSH PRIVATE KEY-----") ||
+            strstr(line, "-----BEGIN DSA PRIVATE KEY-----")) {
+            found = true;
+            break;
+        }
+    }
+
+    fclose(file);
+    return found;
+}
+
+// WASM: parse key using pre-parsed metadata from JS bridge
+static crypto_asset_t* parse_key_file(const char *filepath, asset_store_t *store) {
+    (void)store;
+
+    const crypto_parser_ops_t* ops = crypto_parser_get_ops();
+    if (!ops || !ops->parse_key) {
+        return NULL;
+    }
+
+    crypto_parsed_key_t parsed;
+    int rc = ops->parse_key(NULL, 0, filepath, NULL, &parsed);
+    if (rc != 0) {
+        return NULL;
+    }
+
+    char asset_name[256];
+    snprintf(asset_name, sizeof(asset_name), "key:%s",
+             parsed.algorithm ? parsed.algorithm : "unknown");
+
+    crypto_asset_t *asset = crypto_asset_create(asset_name, ASSET_TYPE_KEY);
+    if (!asset) {
+        ops->free_key(&parsed);
+        return NULL;
+    }
+
+    asset->location = strdup(filepath);
+    asset->algorithm = parsed.algorithm ? strdup(parsed.algorithm) : strdup("Unknown");
+    asset->key_size = (uint32_t)parsed.key_size;
+
+    if (parsed.key_size > 0 && parsed.key_size < 2048 &&
+        parsed.algorithm && strcasecmp(parsed.algorithm, "RSA") == 0) {
+        asset->is_weak = true;
+    }
+
+    json_object *metadata = json_object_new_object();
+    if (parsed.algorithm)
+        json_object_object_add(metadata, "algorithm",
+                               json_object_new_string(parsed.algorithm));
+    json_object_object_add(metadata, "keySize",
+                           json_object_new_int(parsed.key_size));
+    if (parsed.curve_name)
+        json_object_object_add(metadata, "curveName",
+                               json_object_new_string(parsed.curve_name));
+    json_object_object_add(metadata, "isPrivate",
+                           json_object_new_boolean(parsed.is_private));
+    json_object_object_add(metadata, "isEncrypted",
+                           json_object_new_boolean(parsed.is_encrypted));
+
+    asset->metadata_json = strdup(json_object_to_json_string(metadata));
+    json_object_put(metadata);
+
+    ops->free_key(&parsed);
+    return asset;
+}
+
+// Scan directory for key files (recursive)
+static int scan_directory_for_keys(const char *dirpath, asset_store_t *store) {
+    DIR *dir = opendir(dirpath);
+    if (!dir) return -1;
+
+    struct dirent *entry;
+    int found_count = 0;
+
+    while ((entry = readdir(dir)) != NULL) {
+        const char *name = entry->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+            continue;
+
+        char filepath[PATH_MAX];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, name);
+
+        struct stat st;
+        if (stat(filepath, &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            if (name[0] == '.' ||
+                strcmp(name, "proc") == 0 ||
+                strcmp(name, "sys") == 0 ||
+                strcmp(name, "dev") == 0) {
+                continue;
+            }
+            int sub = scan_directory_for_keys(filepath, store);
+            if (sub > 0) found_count += sub;
+            continue;
+        }
+
+        if (!S_ISREG(st.st_mode)) continue;
+
+        // Check for key file extensions
+        size_t len = strlen(name);
+        bool is_key_ext = false;
+        if (len > 4) {
+            const char *ext = name + len - 4;
+            if (strcasecmp(ext, ".key") == 0 ||
+                strcasecmp(ext, ".pem") == 0) {
+                is_key_ext = true;
+            }
+        }
+        if (!is_key_ext) continue;
+
+        if (!is_pem_key_file(filepath)) continue;
+
+        crypto_asset_t *asset = parse_key_file(filepath, store);
+        if (asset) {
+            if (asset_store_add(store, asset) == 0) {
+                found_count++;
+            } else {
+                crypto_asset_destroy(asset);
+            }
+        }
+    }
+
+    closedir(dir);
+    return found_count;
+}
+
+#endif /* __EMSCRIPTEN__ key scanning fallback */
 
 #ifdef __EMSCRIPTEN__
 // WASM: SHA-256 not available without OpenSSL
@@ -7490,8 +7659,23 @@ static int run_walking_skeleton(void) {
             completion_tracker_task_failed(g_completion_tracker);
         }
     } else {
+#ifdef __EMSCRIPTEN__
+        ERROR_LOG_WARNING(g_error_collector, ERROR_CATEGORY_IO,
+                         "main", "Key scanner plugin not found, using basic scan", NULL);
+        int key_count = 0;
+        for (size_t i = 0; i < g_cbom_config.target_path_count; i++) {
+            int count = scan_directory_for_keys(g_cbom_config.target_paths[i], store);
+            if (count > 0) key_count += count;
+        }
+        if (key_count >= 0) {
+            completion_tracker_task_completed(g_completion_tracker);
+        } else {
+            completion_tracker_task_failed(g_completion_tracker);
+        }
+#else
         ERROR_LOG_WARNING(g_error_collector, ERROR_CATEGORY_IO,
                          "main", "Key scanner plugin not found", NULL);
+#endif
     }
 
     // Execute package scanner (plugin already found above)

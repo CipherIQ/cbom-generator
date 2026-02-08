@@ -165,7 +165,9 @@ class WasmScanner {
         const prefixes = ['/scan'];
 
         try {
-            const topLevel = FS.readdir('/scan').filter(e => e !== '.' && e !== '..');
+            // Filter out dotfiles (e.g. .cert-metadata.json) — they're internal,
+            // not part of the archive structure.
+            const topLevel = FS.readdir('/scan').filter(e => e !== '.' && e !== '..' && !e.startsWith('.'));
             if (topLevel.length === 1) {
                 try {
                     const st = FS.stat(`/scan/${topLevel[0]}`);

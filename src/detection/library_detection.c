@@ -576,18 +576,208 @@ static char* __attribute__((unused)) cached_resolve_package_for_path(const char*
 }
 
 #ifdef __EMSCRIPTEN__
-/* WASM: stub — no ldd/readelf in browser environment */
-static ldd_entry_t* __attribute__((unused)) collect_ldd_entries(const char* binary_path, size_t* out_count) {
-    (void)binary_path;
+
+/**
+ * Extract DT_NEEDED entries from ELF binary using in-process parsing.
+ * Returns a NULL-terminated array of library name strings.
+ * Supports both 32-bit and 64-bit ELF. Caller must free each string and the array.
+ */
+static char** extract_needed_from_elf(const char* binary_path, int* out_count) {
     if (out_count) *out_count = 0;
-    return NULL;
+    if (!binary_path) return NULL;
+
+    int fd = open(binary_path, O_RDONLY);
+    if (fd < 0) return NULL;
+
+    unsigned char e_ident[EI_NIDENT];
+    if (read(fd, e_ident, EI_NIDENT) != EI_NIDENT) {
+        close(fd);
+        return NULL;
+    }
+
+    if (e_ident[EI_MAG0] != ELFMAG0 || e_ident[EI_MAG1] != ELFMAG1 ||
+        e_ident[EI_MAG2] != ELFMAG2 || e_ident[EI_MAG3] != ELFMAG3) {
+        close(fd);
+        return NULL;
+    }
+
+    char** needed = NULL;
+    int count = 0;
+    int capacity = 0;
+    int elf_class = e_ident[EI_CLASS];
+
+    /* Macro to avoid duplicating the DT_NEEDED collection logic */
+    #define COLLECT_NEEDED(EhdrT, ShdrT, DynT)                                 \
+    do {                                                                        \
+        EhdrT ehdr;                                                             \
+        lseek(fd, 0, SEEK_SET);                                                 \
+        if (read(fd, &ehdr, sizeof(ehdr)) != (ssize_t)sizeof(ehdr)) break;     \
+                                                                                \
+        ShdrT* shdrs = malloc(ehdr.e_shnum * sizeof(ShdrT));                   \
+        if (!shdrs) break;                                                      \
+                                                                                \
+        lseek(fd, ehdr.e_shoff, SEEK_SET);                                      \
+        ssize_t sh_sz = (ssize_t)(ehdr.e_shnum * sizeof(ShdrT));               \
+        if (read(fd, shdrs, sh_sz) != sh_sz) { free(shdrs); break; }           \
+                                                                                \
+        ShdrT* dynamic_shdr = NULL;                                             \
+        ShdrT* dynstr_shdr = NULL;                                              \
+        for (int i = 0; i < ehdr.e_shnum; i++) {                               \
+            if (shdrs[i].sh_type == SHT_DYNAMIC) dynamic_shdr = &shdrs[i];     \
+            if (shdrs[i].sh_type == SHT_STRTAB && i != ehdr.e_shstrndx)        \
+                if (!dynstr_shdr) dynstr_shdr = &shdrs[i];                      \
+        }                                                                       \
+        if (dynamic_shdr && dynamic_shdr->sh_link < ehdr.e_shnum)              \
+            dynstr_shdr = &shdrs[dynamic_shdr->sh_link];                        \
+                                                                                \
+        if (dynamic_shdr && dynstr_shdr) {                                      \
+            char* dynstr = malloc(dynstr_shdr->sh_size);                        \
+            if (dynstr) {                                                       \
+                lseek(fd, dynstr_shdr->sh_offset, SEEK_SET);                    \
+                if (read(fd, dynstr, dynstr_shdr->sh_size) ==                   \
+                    (ssize_t)dynstr_shdr->sh_size) {                            \
+                    size_t dyn_count = dynamic_shdr->sh_size / sizeof(DynT);    \
+                    DynT* dyns = malloc(dynamic_shdr->sh_size);                 \
+                    if (dyns) {                                                 \
+                        lseek(fd, dynamic_shdr->sh_offset, SEEK_SET);           \
+                        if (read(fd, dyns, dynamic_shdr->sh_size) ==            \
+                            (ssize_t)dynamic_shdr->sh_size) {                   \
+                            for (size_t _i = 0; _i < dyn_count; _i++) {         \
+                                if (dyns[_i].d_tag == DT_NEEDED) {              \
+                                    size_t off = dyns[_i].d_un.d_val;           \
+                                    if (off < dynstr_shdr->sh_size) {           \
+                                        if (count >= capacity) {                \
+                                            capacity = capacity ? capacity*2 : 16; \
+                                            char** tmp = realloc(needed,        \
+                                                capacity * sizeof(char*));      \
+                                            if (!tmp) break;                    \
+                                            needed = tmp;                       \
+                                        }                                       \
+                                        needed[count++] = strdup(dynstr + off); \
+                                    }                                           \
+                                }                                               \
+                            }                                                   \
+                        }                                                       \
+                        free(dyns);                                             \
+                    }                                                           \
+                }                                                               \
+                free(dynstr);                                                   \
+            }                                                                   \
+        }                                                                       \
+        free(shdrs);                                                            \
+    } while(0)
+
+    if (elf_class == ELFCLASS64) {
+        COLLECT_NEEDED(Elf64_Ehdr, Elf64_Shdr, Elf64_Dyn);
+    } else if (elf_class == ELFCLASS32) {
+        COLLECT_NEEDED(Elf32_Ehdr, Elf32_Shdr, Elf32_Dyn);
+    }
+
+    #undef COLLECT_NEEDED
+
+    close(fd);
+    if (out_count) *out_count = count;
+    return needed;
 }
 
-/* WASM: stub — no ELF binary analysis in browser */
-binary_crypto_profile_t* analyze_binary_crypto(const char* binary_path) {
-    (void)binary_path;
-    return NULL;
+/* WASM: collect DT_NEEDED entries via in-process ELF parsing */
+static ldd_entry_t* collect_ldd_entries(const char* binary_path, size_t* out_count) {
+    if (out_count) *out_count = 0;
+    if (!binary_path) return NULL;
+
+    int lib_count = 0;
+    char** libraries = extract_needed_from_elf(binary_path, &lib_count);
+
+    if (!libraries || lib_count == 0) {
+        if (libraries) free(libraries);
+        return NULL;
+    }
+
+    ldd_entry_t* entries = calloc(lib_count, sizeof(ldd_entry_t));
+    if (!entries) {
+        for (int i = 0; i < lib_count; i++) free(libraries[i]);
+        free(libraries);
+        return NULL;
+    }
+
+    for (int i = 0; i < lib_count; i++) {
+        entries[i].soname = libraries[i];   /* transfer ownership */
+        entries[i].resolved_path = NULL;    /* no path resolution in WASM */
+    }
+
+    free(libraries);
+    *out_count = lib_count;
+    return entries;
 }
+
+/* WASM: analyze binary crypto using in-process ELF parsing */
+binary_crypto_profile_t* analyze_binary_crypto(const char* binary_path) {
+    if (!binary_path) return NULL;
+
+    if (!is_elf_executable(binary_path)) {
+        return NULL;
+    }
+
+    binary_crypto_profile_t* profile = calloc(1, sizeof(binary_crypto_profile_t));
+    if (!profile) return NULL;
+
+    profile->binary_path = strdup(binary_path);
+    profile->binary_pkg_name = cached_resolve_package_for_path(binary_path);
+
+    /* Collect dynamic libraries via in-process ELF parsing */
+    size_t ldd_count = 0;
+    ldd_entry_t* ldd_entries = collect_ldd_entries(binary_path, &ldd_count);
+
+    if (ldd_entries && ldd_count > 0) {
+        profile->libs = calloc(ldd_count, sizeof(detected_library_t));
+        if (profile->libs) {
+            profile->libs_count = ldd_count;
+
+            for (size_t i = 0; i < ldd_count; i++) {
+                profile->libs[i].soname = ldd_entries[i].soname;
+                profile->libs[i].resolved_path = ldd_entries[i].resolved_path;
+                profile->libs[i].pkg_name = NULL;   /* no package manager in WASM */
+
+                const crypto_library_info_t* info =
+                    find_crypto_lib_by_soname(profile->libs[i].soname);
+
+                if (info) {
+                    profile->libs[i].is_crypto = 1;
+                    profile->libs[i].crypto_lib_id = info->id;
+                } else {
+                    profile->libs[i].is_crypto = 0;
+                    profile->libs[i].crypto_lib_id = NULL;
+                }
+            }
+        } else {
+            for (size_t i = 0; i < ldd_count; i++) {
+                free(ldd_entries[i].soname);
+                free(ldd_entries[i].resolved_path);
+            }
+        }
+    }
+
+    if (ldd_entries) free(ldd_entries);
+
+    /* Embedded crypto detection */
+    const char* base = strrchr(binary_path, '/');
+    const char* binary_name = base ? base + 1 : binary_path;
+
+    const embedded_crypto_app_info_t* embedded =
+        find_embedded_crypto_by_binary(binary_name, profile->binary_pkg_name);
+
+    if (embedded) {
+        profile->embedded_providers = calloc(1, sizeof(embedded_crypto_provider_t));
+        if (profile->embedded_providers) {
+            profile->embedded_providers_count = 1;
+            profile->embedded_providers[0].provider_id = embedded->provider_id;
+            profile->embedded_providers[0].algorithms = embedded->algorithms;
+        }
+    }
+
+    return profile;
+}
+
 #else
 // Parse ldd output and collect libraries (soname + resolved path)
 static ldd_entry_t* collect_ldd_entries(const char* binary_path, size_t* out_count) {
