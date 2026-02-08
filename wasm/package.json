@@ -8,6 +8,7 @@
     "build:js": "echo 'TODO: bundle JS modules'",
     "test": "node --test tests/unit/",
     "test:archive": "node --test ../tests/js/archive.test.mjs",
+    "test:certs": "node --test ../tests/js/cert-parser.test.mjs",
     "test:browser": "npx playwright test tests/browser/",
     "package": "node scripts/package-wasm.js"
   },
