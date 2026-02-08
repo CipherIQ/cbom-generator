@@ -23,6 +23,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __EMSCRIPTEN__
+/* WASM: process detection requires /proc filesystem — unavailable in browser.
+ * Full stub returning empty results for all functions. */
+
+bool process_detector_detect(const process_detection_config_t* config,
+                               service_instance_t* instance) {
+    (void)config; (void)instance;
+    return false;
+}
+
+bool process_detector_extract_config_dir(const char* cmdline, char** config_dir) {
+    (void)cmdline; (void)config_dir;
+    return false;
+}
+
+bool process_detector_matches_pattern(const char* cmdline, const char* pattern) {
+    (void)cmdline; (void)pattern;
+    return false;
+}
+
+char* process_detector_get_process_name(pid_t pid) {
+    (void)pid;
+    return NULL;
+}
+
+char* process_detector_get_command_line(pid_t pid) {
+    (void)pid;
+    return NULL;
+}
+
+#else /* !__EMSCRIPTEN__ */
+
 #include <dirent.h>
 #include <ctype.h>
 #include <unistd.h>
@@ -283,3 +316,5 @@ bool process_detector_detect(const process_detection_config_t* config,
     closedir(proc);
     return detected;
 }
+
+#endif /* __EMSCRIPTEN__ */

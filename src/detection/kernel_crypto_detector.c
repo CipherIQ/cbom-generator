@@ -27,6 +27,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __EMSCRIPTEN__
+/* WASM: kernel crypto detection requires /proc/crypto, mmap, and nm — none
+ * available in browser environment. Full stub returning empty results. */
+
+bool detect_kernel_crypto_usage(const char* binary_path, kernel_crypto_info_t* info) {
+    (void)binary_path;
+    if (info) memset(info, 0, sizeof(*info));
+    return false;
+}
+
+bool detect_static_crypto(const char* binary_path, static_crypto_info_t* info) {
+    (void)binary_path;
+    if (info) memset(info, 0, sizeof(*info));
+    return false;
+}
+
+bool detect_embedded_crypto_symbols(const char* binary_path, embedded_crypto_info_t* info) {
+    (void)binary_path;
+    if (info) memset(info, 0, sizeof(*info));
+    return false;
+}
+
+void kernel_crypto_info_free(kernel_crypto_info_t* info) { (void)info; }
+void static_crypto_info_free(static_crypto_info_t* info) { (void)info; }
+void embedded_crypto_info_free(embedded_crypto_info_t* info) { (void)info; }
+
+#else /* !__EMSCRIPTEN__ */
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -570,3 +599,5 @@ void embedded_crypto_info_free(embedded_crypto_info_t* info) {
     info->symbol_count = 0;
     info->has_embedded_symbols = false;
 }
+
+#endif /* __EMSCRIPTEN__ */

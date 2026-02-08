@@ -23,6 +23,38 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __EMSCRIPTEN__
+/* WASM: package detection requires dpkg/rpm/pacman — unavailable in browser.
+ * Full stub returning empty results for all functions. */
+
+bool package_detector_detect(const package_detection_config_t* config,
+                               service_instance_t* instance) {
+    (void)config; (void)instance;
+    return false;
+}
+
+bool package_detector_check_dpkg(const char* package_name, char** version) {
+    (void)package_name; (void)version;
+    return false;
+}
+
+bool package_detector_check_rpm(const char* package_name, char** version) {
+    (void)package_name; (void)version;
+    return false;
+}
+
+bool package_detector_check_pacman(const char* package_name, char** version) {
+    (void)package_name; (void)version;
+    return false;
+}
+
+const char* package_detector_get_available_manager(void) {
+    return NULL;
+}
+
+#else /* !__EMSCRIPTEN__ */
+
 #include <unistd.h>
 
 const char* package_detector_get_available_manager(void) {
@@ -258,3 +290,5 @@ bool package_detector_detect(const package_detection_config_t* config,
 
     return detected;
 }
+
+#endif /* __EMSCRIPTEN__ */

@@ -170,10 +170,14 @@ void application_info_free(application_info_t* info) {
 bool application_scanner_is_elf_executable(const char* path) {
     if (!path) return false;
 
-    // Check executable permission
+#ifndef __EMSCRIPTEN__
+    // Native: require execute permission
     if (access(path, X_OK) != 0) {
         return false;
     }
+#endif
+    /* WASM note: skip access(X_OK) — MEMFS files lack execute permission bits.
+     * Cross-arch binaries are data files, not host-executable. */
 
     // Check if regular file
     struct stat st;
@@ -200,6 +204,14 @@ bool application_scanner_is_elf_executable(const char* path) {
             magic[2] == 'L' && magic[3] == 'F');
 }
 
+#ifdef __EMSCRIPTEN__
+/* WASM: readelf not available in browser environment. */
+char** application_scanner_run_readelf(const char* binary_path, int* lib_count) {
+    (void)binary_path;
+    if (lib_count) *lib_count = 0;
+    return NULL;
+}
+#else
 /**
  * Extract dynamic library dependencies using readelf (cross-architecture compatible)
  * @param binary_path Path to ELF binary
@@ -267,7 +279,16 @@ char** application_scanner_run_readelf(const char* binary_path, int* lib_count) 
 
     return libraries;
 }
+#endif /* __EMSCRIPTEN__ — run_readelf */
 
+#ifdef __EMSCRIPTEN__
+/* WASM: ldd not available in browser environment. */
+char** application_scanner_run_ldd(const char* binary_path, int* lib_count) {
+    (void)binary_path;
+    if (lib_count) *lib_count = 0;
+    return NULL;
+}
+#else
 char** application_scanner_run_ldd(const char* binary_path, int* lib_count) {
     if (!binary_path || !lib_count) return NULL;
 
@@ -336,6 +357,7 @@ char** application_scanner_run_ldd(const char* binary_path, int* lib_count) {
 
     return libraries;
 }
+#endif /* __EMSCRIPTEN__ — run_ldd */
 
 /**
  * Extract library dependencies using configured method (readelf or ldd)
@@ -356,6 +378,13 @@ char** application_scanner_extract_libraries(const char* binary_path, int* lib_c
     }
 }
 
+#ifdef __EMSCRIPTEN__
+/* WASM: cannot execute binaries for version extraction. */
+char* application_scanner_extract_version(const char* binary_path) {
+    (void)binary_path;
+    return NULL;
+}
+#else
 char* application_scanner_extract_version(const char* binary_path) {
     if (!binary_path) return NULL;
 
@@ -397,6 +426,7 @@ char* application_scanner_extract_version(const char* binary_path) {
 
     return NULL;  // Version extraction failed
 }
+#endif /* __EMSCRIPTEN__ — extract_version */
 
 char* application_scanner_infer_category(const char* name, const char* path) {
     if (!name) return strdup("application");

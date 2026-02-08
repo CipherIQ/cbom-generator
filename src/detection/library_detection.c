@@ -31,12 +31,10 @@
 #include <json-c/json.h>
 #include <libgen.h>
 
-#ifndef __EMSCRIPTEN__
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <elf.h>
-#endif
 
 // Global CBOM configuration from main.c
 extern cbom_config_t g_cbom_config;
@@ -48,10 +46,20 @@ typedef struct {
 } ldd_entry_t;
 
 #ifdef __EMSCRIPTEN__
-/* WASM: stub — no ELF binaries in browser environment */
-static int __attribute__((unused)) is_elf_executable(const char* path) {
-    (void)path;
-    return 0;
+/* WASM: skip access(X_OK) — MEMFS files lack execute permission bits.
+ * Cross-arch binaries are data files, not host-executable. */
+static int is_elf_executable(const char* path) {
+    if (!path) return 0;
+    struct stat st;
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    unsigned char magic[4];
+    size_t n = fread(magic, 1, 4, f);
+    fclose(f);
+    if (n != 4) return 0;
+    return (magic[0] == 0x7F && magic[1] == 'E' &&
+            magic[2] == 'L' && magic[3] == 'F');
 }
 #else
 // Simple ELF check (matches existing pattern)
@@ -126,18 +134,6 @@ static void free_soname_cache(void) {
     soname_cache_initialized = false;
 }
 
-#ifdef __EMSCRIPTEN__
-/* WASM: stub — no ELF parsing, return basename as fallback */
-char* extract_soname_from_elf(const char* library_path) {
-    if (!library_path) return NULL;
-    char* path_copy = strdup(library_path);
-    if (!path_copy) return NULL;
-    char* base = basename(path_copy);
-    char* result = strdup(base);
-    free(path_copy);
-    return result;
-}
-#else
 /**
  * Extract SONAME from ELF binary using in-process parsing
  * This avoids spawning readelf for every library (performance improvement)
@@ -361,7 +357,6 @@ fallback:
         return result;
     }
 }
-#endif /* __EMSCRIPTEN__ */
 
 /**
  * Get SONAME from cache or extract from ELF

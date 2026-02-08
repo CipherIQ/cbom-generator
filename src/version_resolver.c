@@ -259,6 +259,14 @@ void version_resolver_reset_stats(void) {
 // VERNEED Parser Implementation
 // ============================================================================
 
+#ifdef __EMSCRIPTEN__
+/* WASM: readelf not available. VERNEED parsing requires in-process
+ * ELF .gnu.version_r section reader (future enhancement). */
+char* parse_verneed_version(const char* binary_path, const char* target_soname) {
+    (void)binary_path; (void)target_soname;
+    return NULL;
+}
+#else
 char* parse_verneed_version(const char* binary_path, const char* target_soname) {
     if (!binary_path) return NULL;
 
@@ -342,6 +350,7 @@ char* parse_verneed_version(const char* binary_path, const char* target_soname) 
 
     return NULL;
 }
+#endif /* __EMSCRIPTEN__ */
 
 /**
  * Extract semantic version from version tag (e.g., "OPENSSL_3.0.3" -> "3.0.3")
@@ -466,6 +475,13 @@ char* parse_soname_version(const char* soname) {
 // Package Manager Resolution
 // ============================================================================
 
+#ifdef __EMSCRIPTEN__
+/* WASM: no package managers available in browser environment. */
+static char* resolve_via_package_manager(const char* library_path, const char* pkg_name) {
+    (void)library_path; (void)pkg_name;
+    return NULL;
+}
+#else
 static char* resolve_via_package_manager(const char* library_path, const char* pkg_name) {
     if (!library_path && !pkg_name) return NULL;
 
@@ -536,6 +552,7 @@ static char* resolve_via_package_manager(const char* library_path, const char* p
 
     return result;
 }
+#endif /* __EMSCRIPTEN__ */
 
 // ============================================================================
 // Yocto Manifest Implementation

@@ -42,6 +42,19 @@ bool binary_detector_is_executable(const char* path) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    /* WASM: skip access(X_OK) — MEMFS files lack execute permission bits.
+     * Cross-arch binaries are data files; check regular file + ELF magic. */
+    struct stat st;
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return false;
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    unsigned char magic[4];
+    size_t n = fread(magic, 1, 4, f);
+    fclose(f);
+    return (n == 4 && magic[0] == 0x7F && magic[1] == 'E' &&
+            magic[2] == 'L' && magic[3] == 'F');
+#else
     // Check if file exists and is executable
     if (access(path, X_OK) == 0) {
         // Additional check: verify it's a regular file or symlink, not a directory
@@ -54,6 +67,7 @@ bool binary_detector_is_executable(const char* path) {
     }
 
     return false;
+#endif
 }
 
 /**

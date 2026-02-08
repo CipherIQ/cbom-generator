@@ -23,6 +23,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __EMSCRIPTEN__
+/* WASM: systemd detection requires systemctl — unavailable in browser.
+ * Full stub returning empty results for all functions. */
+
+bool systemd_detector_detect(const systemd_detection_config_t* config,
+                               service_instance_t* instance) {
+    (void)config; (void)instance;
+    return false;
+}
+
+bool systemd_detector_is_active(const char* service_name) {
+    (void)service_name;
+    return false;
+}
+
+pid_t systemd_detector_get_pid(const char* service_name) {
+    (void)service_name;
+    return 0;
+}
+
+bool systemd_detector_available(void) {
+    return false;
+}
+
+#else /* !__EMSCRIPTEN__ */
+
 #include <unistd.h>
 
 bool systemd_detector_available(void) {
@@ -118,3 +145,5 @@ bool systemd_detector_detect(const systemd_detection_config_t* config,
 
     return false;
 }
+
+#endif /* __EMSCRIPTEN__ */
