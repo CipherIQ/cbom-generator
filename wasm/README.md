@@ -68,6 +68,30 @@ npm run build:js -- --minify  # production output (429 KB)
 This produces `dist/scanner.html` — a self-contained single-file scanner with
 all JavaScript bundled inline (no CDN, no ES module imports).
 
+## Development workflow
+
+After the initial build, you only need to rebuild what changed:
+
+| What changed | Rebuild command |
+|---|---|
+| C source (`src/*.c`, `src/*.h`) | `source ../emsdk/emsdk_env.sh && npm run build:wasm` |
+| JS modules (`src/js/*.js`) | Reload the dev UI, or `npm run build:js` for the bundled version |
+| Web UI (`web/index.html`) | Reload the dev UI, or `npm run build:js` for the bundled version |
+| Plugins (`plugins/*.yaml`) | No rebuild — just reload the browser |
+| Registry (`registry/*.yaml`) | No rebuild — just reload the browser |
+| C dependencies (json-c, libyaml, jansson) | `npm run build:deps` then `npm run build:wasm` (rare) |
+
+Use the development UI (`wasm/web/`) during development — it loads JS
+modules directly so changes are visible on reload without bundling.
+Only run `npm run build:js` when you need to test or ship the bundled version.
+
+Verify changes haven't broken parity with the native scanner:
+
+```bash
+cd ../build && ctest              # native tests (25/25)
+cd .. && bash wasm/tests/run-regression.sh   # WASM regression (98%)
+```
+
 ## Testing the scanner in a browser
 
 The scanner needs HTTP to load the WASM binary, plugins, and registry files.
