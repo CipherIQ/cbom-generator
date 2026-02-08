@@ -79,3 +79,6 @@ build-wasm/
 wasm/node_modules/
 wasm/dist/
 deps/*/build-wasm/
+
+# WASM test fixtures (large binaries — regenerate with package-yocto-rootfs.sh)
+wasm/tests/fixtures/*.tar.gz

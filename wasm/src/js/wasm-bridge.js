@@ -160,28 +160,48 @@ class WasmScanner {
         }
 
         // Mode 2: Detect rootfs structure in MEMFS
-        const rootfsDirs = [
-            '/scan/usr/bin',
-            '/scan/usr/sbin',
-            '/scan/usr/lib',
-            '/scan/usr/lib64',
-            '/scan/usr/local/bin',
-            '/scan/usr/local/lib',
-            '/scan/etc',
-            '/scan/lib',
+        // Check /scan/ directly first, then check inside a single top-level
+        // directory (common in rootfs archives: rootfs/, firmware/, etc.)
+        const prefixes = ['/scan'];
+
+        try {
+            const topLevel = FS.readdir('/scan').filter(e => e !== '.' && e !== '..');
+            if (topLevel.length === 1) {
+                try {
+                    const st = FS.stat(`/scan/${topLevel[0]}`);
+                    if (FS.isDir(st.mode)) {
+                        prefixes.push(`/scan/${topLevel[0]}`);
+                    }
+                } catch { /* ignore */ }
+            }
+        } catch { /* ignore */ }
+
+        const rootfsSuffixes = [
+            '/usr/bin',
+            '/usr/sbin',
+            '/usr/lib',
+            '/usr/lib64',
+            '/usr/local/bin',
+            '/usr/local/lib',
+            '/etc',
+            '/lib',
         ];
 
-        const detected = rootfsDirs.filter(p => {
-            try {
-                const st = FS.stat(p);
-                return FS.isDir(st.mode);
-            } catch {
-                return false;
-            }
-        });
+        for (const prefix of prefixes) {
+            const detected = rootfsSuffixes
+                .map(suffix => prefix + suffix)
+                .filter(p => {
+                    try {
+                        const st = FS.stat(p);
+                        return FS.isDir(st.mode);
+                    } catch {
+                        return false;
+                    }
+                });
 
-        if (detected.length > 0) {
-            return detected;
+            if (detected.length > 0) {
+                return detected;
+            }
         }
 
         // Mode 3: Fallback — scan entire archive
