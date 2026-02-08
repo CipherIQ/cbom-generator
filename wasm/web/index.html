@@ -574,7 +574,8 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
         </div>
 
         <div class="actions">
-            <button class="btn btn-primary" id="btn-download">Download CBOM (JSON)</button>
+            <button class="btn btn-primary" id="btn-explore">Explore in Dashboard</button>
+            <button class="btn" id="btn-download">Download CBOM (JSON)</button>
             <button class="btn" id="btn-scan-another">Scan Another File</button>
         </div>
     </div>
@@ -592,6 +593,17 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
 import { extractArchive } from '../src/js/archive.js';
 import { parseCryptoAssets } from '../src/js/cert-parser.js';
 import { extractCbomSummary } from '../src/js/cbom-summary.js';
+import { isInsideExplorer, loadCbomIntoExplorer, openInExplorer } from '../src/js/explorer-integration.js';
+
+// ── Explorer integration ────────────────────────────────────────────
+const embedded = isInsideExplorer();
+if (embedded) {
+    // Hide standalone header/footer when embedded in cbom-explorer
+    const header = document.querySelector('.header');
+    const footer = document.querySelector('.footer');
+    if (header) header.style.display = 'none';
+    if (footer) footer.style.display = 'none';
+}
 
 // ── Configuration ───────────────────────────────────────────────────
 // Paths are relative to the repo root when served from there.
@@ -1035,6 +1047,28 @@ function renderResults(result) {
         a.click();
         URL.revokeObjectURL(url);
     };
+
+    // Explorer integration button
+    const btnExplore = document.getElementById('btn-explore');
+    if (embedded) {
+        btnExplore.textContent = 'Explore Results';
+        btnExplore.onclick = () => {
+            if (!loadCbomIntoExplorer(result.cbom)) {
+                // Fallback: download if explorer API unavailable
+                document.getElementById('btn-download').click();
+            }
+        };
+    } else {
+        btnExplore.textContent = 'Explore in Dashboard';
+        btnExplore.onclick = () => {
+            // Explorer URL: cbom-explorer is a sibling repo to cbom-generator
+            const explorerUrl = '../../../cbom-explorer/cbom-viz.html';
+            if (!openInExplorer(result.cbom, explorerUrl)) {
+                // Popup blocked or sessionStorage unavailable — fall back to download
+                document.getElementById('btn-download').click();
+            }
+        };
+    }
 }
 
 // ── Component table ─────────────────────────────────────────────────
