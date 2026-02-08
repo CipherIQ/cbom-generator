@@ -359,7 +359,7 @@ const char* yaml_node_type_string(yaml_node_t* node) {
     }
 }
 
-void yaml_free(yaml_doc_t* doc) {
+void yaml_doc_free(yaml_doc_t* doc) {
     if (!doc) {
         return;
     }
@@ -380,7 +380,7 @@ bool yaml_validate_file(const char* filepath) {
     }
 
     bool valid = doc->is_valid;
-    yaml_free(doc);
+    yaml_doc_free(doc);
     return valid;
 }
 

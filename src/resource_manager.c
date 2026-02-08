@@ -31,10 +31,16 @@
 // Default resource limits
 static const resource_limits_t DEFAULT_LIMITS = {
     .max_open_files = 1024,
+#if SIZE_MAX > 0xFFFFFFFF
     .max_total_bytes = 100ULL * 1024 * 1024 * 1024, // 100GB
     .max_bytes_per_file = 1024 * 1024 * 1024,        // 1GB
-    .max_concurrency = 32,
     .memory_watermark = 512 * 1024 * 1024,           // 512MB
+#else
+    .max_total_bytes = (size_t)2 * 1024 * 1024 * 1024 - 1, // ~2GB (32-bit max)
+    .max_bytes_per_file = 256 * 1024 * 1024,         // 256MB
+    .memory_watermark = 64 * 1024 * 1024,            // 64MB
+#endif
+    .max_concurrency = 32,
     .temp_dir_path = NULL,
     .enforce_noexec = true
 };

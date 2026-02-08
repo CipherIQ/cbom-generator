@@ -568,7 +568,7 @@ int manifest_load(const char* manifest_path) {
     }
 
     char line[1024];
-    int line_num = 0;
+    int line_num __attribute__((unused)) = 0;
     int entries_loaded = 0;
 
     while (fgets(line, sizeof(line), fp)) {

@@ -166,8 +166,13 @@ bool cbom_config_validate_json_schema(const char* json_content);
 #define CBOM_DEFAULT_THREAD_COUNT 0  // 0 = auto-detect CPU count
 #define CBOM_DEFAULT_REVOCATION_TIMEOUT 10
 #define CBOM_DEFAULT_CACHE_TTL_HOURS 24
+#if SIZE_MAX > 0xFFFFFFFF
 #define CBOM_DEFAULT_MAX_FILE_SIZE (1024 * 1024 * 1024)  // 1GB
 #define CBOM_DEFAULT_MAX_TOTAL_SIZE (100ULL * 1024 * 1024 * 1024)  // 100GB
+#else
+#define CBOM_DEFAULT_MAX_FILE_SIZE (256 * 1024 * 1024)  // 256MB (32-bit)
+#define CBOM_DEFAULT_MAX_TOTAL_SIZE ((size_t)2 * 1024 * 1024 * 1024 - 1)  // ~2GB (32-bit)
+#endif
 
 // Configuration file paths
 #define CBOM_SYSTEM_CONFIG_PATH "/etc/cbom/config.json"

@@ -891,7 +891,7 @@ pqc_category_t classify_app_from_alternate_detection(
     const char* worst_algo = NULL;
     char worst_normalized[64] = {0};
 
-    int safe_count = 0, trans_count = 0, dep_count = 0, unsafe_count = 0;
+    int safe_count __attribute__((unused)) = 0, trans_count __attribute__((unused)) = 0, dep_count __attribute__((unused)) = 0, unsafe_count __attribute__((unused)) = 0;
 
     for (size_t i = 0; i < count && algorithms[i]; i++) {
         char normalized[64];

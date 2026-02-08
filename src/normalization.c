@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <openssl/sha.h>
+#include "sha256_portable.h"
 
 // Utility function to normalize algorithm names
 char* normalize_algorithm_name(const char *name) {

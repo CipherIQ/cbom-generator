@@ -28,8 +28,10 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
 
 char* port_detector_hex_to_address(unsigned long hex_addr, bool is_ipv6) {
     if (is_ipv6) {

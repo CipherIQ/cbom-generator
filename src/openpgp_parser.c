@@ -89,16 +89,16 @@ static char* extract_pgp_fingerprint(const char *filepath) {
     
     // Generate a simple fingerprint-like hash from content
     // This is a placeholder - real implementation would parse PGP packets
-    unsigned long hash = 5381;
+    unsigned long long hash = 5381;
     for (size_t i = 0; i < read_size; i++) {
         hash = ((hash << 5) + hash) + (unsigned char)content[i];
     }
-    
+
     secure_free(content, file_size + 1);
-    
+
     char *fingerprint = secure_alloc(65); // 64 chars + null terminator for safety
     if (fingerprint) {
-        snprintf(fingerprint, 65, "%08lX%08lX%08lX%08lX%08lX", 
+        snprintf(fingerprint, 65, "%08llX%08llX%08llX%08llX%08llX",
                 hash, hash >> 8, hash >> 16, hash >> 24, hash >> 32);
     }
     

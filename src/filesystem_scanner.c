@@ -946,7 +946,7 @@ int traverse_directory(filesystem_scanner_t* scanner,
     
     struct dirent* entry;
     int result = FS_SCAN_SUCCESS;
-    int files_checked = 0;
+    int files_checked __attribute__((unused)) = 0;
     static atomic_size_t global_file_counter = 0;  // Atomic: thread-safe across parallel scanners
     static time_t last_progress = 0;
     if (last_progress == 0) last_progress = time(NULL);

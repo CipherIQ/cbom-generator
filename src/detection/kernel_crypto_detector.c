@@ -129,7 +129,7 @@ static const char* CRYPTO_SYMBOLS[] = {
 /**
  * Check if character is printable ASCII.
  */
-static inline bool is_printable(unsigned char c) {
+static inline __attribute__((unused)) bool is_printable(unsigned char c) {
     return (c >= 0x20 && c <= 0x7e);
 }
 

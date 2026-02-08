@@ -15,16 +15,20 @@
 #ifndef KEY_MANAGER_H
 #define KEY_MANAGER_H
 
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
 #include <openssl/x509.h>
+#endif
 #include "asset_store.h"
 
 // Key manager for SPKI deduplication and first-class KEY components
 
+#ifndef __EMSCRIPTEN__
 // Register a certificate's public key and return the key ID
 // If the key already exists (same SPKI), returns existing key ID
 // If new key, creates a KEY component and returns its ID
 char* key_manager_register_certificate_key(X509 *cert, asset_store_t *store);
+#endif
 
 // Get statistics about registered keys
 typedef struct {
@@ -43,6 +47,7 @@ void key_manager_cleanup(void);
 
 // Issue #4: Relationship building functions
 
+#ifndef __EMSCRIPTEN__
 // Match private keys to their certificates using SPKI hash comparison
 // Creates RELATIONSHIP_SIGNS relationships
 // Returns number of key-cert matches created
@@ -52,5 +57,6 @@ int key_manager_match_keys_to_certificates(asset_store_t *store);
 // Creates RELATIONSHIP_ISSUED_BY relationships
 // Returns number of chain relationships created
 int key_manager_build_certificate_chains(asset_store_t *store);
+#endif
 
 #endif // KEY_MANAGER_H

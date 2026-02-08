@@ -20,9 +20,88 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#ifndef __EMSCRIPTEN__
 #include <sys/sysinfo.h>
+#endif
 #include <time.h>
 #include <stdio.h>
+
+#ifdef __EMSCRIPTEN__
+
+/* ── WASM stubs: synchronous single-threaded execution ────────────── */
+
+uint32_t thread_pool_get_optimal_thread_count(void) { return 1; }
+int thread_pool_validate_config(uint32_t thread_count, size_t queue_capacity) {
+    (void)thread_count; (void)queue_capacity; return 0;
+}
+
+thread_pool_t* thread_pool_create(uint32_t thread_count, size_t queue_capacity) {
+    (void)thread_count;
+    thread_pool_t* pool = calloc(1, sizeof(thread_pool_t));
+    if (!pool) return NULL;
+    pool->thread_count = 1;
+    pool->queue_capacity = queue_capacity;
+    atomic_init(&pool->is_running, true);
+    atomic_init(&pool->shutdown_requested, false);
+    atomic_init(&pool->next_sequence_id, 1);
+    atomic_init(&pool->total_tasks_submitted, 0);
+    atomic_init(&pool->total_tasks_completed, 0);
+    atomic_init(&pool->total_tasks_failed, 0);
+    clock_gettime(CLOCK_MONOTONIC, &pool->start_time);
+    return pool;
+}
+
+int thread_pool_submit(thread_pool_t* pool, work_function_t function,
+                      void* data, void* context, work_priority_t priority) {
+    if (!pool || !function || !atomic_load(&pool->is_running)) return -1;
+    (void)priority;
+    atomic_fetch_add(&pool->total_tasks_submitted, 1);
+    int result = function(data, context);
+    if (result != 0) atomic_fetch_add(&pool->total_tasks_failed, 1);
+    atomic_fetch_add(&pool->total_tasks_completed, 1);
+    return 0;
+}
+
+int thread_pool_wait_all(thread_pool_t* pool) { (void)pool; return 0; }
+int thread_pool_shutdown(thread_pool_t* pool, bool wait_for_completion) {
+    if (!pool) return -1;
+    (void)wait_for_completion;
+    atomic_store(&pool->is_running, false);
+    return 0;
+}
+
+void thread_pool_destroy(thread_pool_t* pool) { free(pool); }
+
+thread_pool_metrics_t* thread_pool_get_metrics(thread_pool_t* pool) {
+    if (!pool) return NULL;
+    thread_pool_metrics_t* m = calloc(1, sizeof(thread_pool_metrics_t));
+    if (!m) return NULL;
+    m->total_tasks_submitted = atomic_load(&pool->total_tasks_submitted);
+    m->total_tasks_completed = atomic_load(&pool->total_tasks_completed);
+    m->total_tasks_failed = atomic_load(&pool->total_tasks_failed);
+    m->thread_count = 1;
+    return m;
+}
+
+void thread_pool_metrics_destroy(thread_pool_metrics_t* metrics) {
+    if (!metrics) return;
+    free(metrics->per_thread_stats);
+    free(metrics);
+}
+
+int thread_pool_set_work_stealing(thread_pool_t* pool, bool enable, uint32_t steal_attempts) {
+    (void)pool; (void)enable; (void)steal_attempts; return 0;
+}
+
+work_queue_t* work_queue_create(size_t capacity) { (void)capacity; return NULL; }
+void work_queue_destroy(work_queue_t* queue) { (void)queue; }
+int work_queue_push(work_queue_t* queue, work_item_t* item) { (void)queue; (void)item; return -1; }
+work_item_t* work_queue_pop(work_queue_t* queue) { (void)queue; return NULL; }
+work_item_t* work_queue_steal(work_queue_t* queue) { (void)queue; return NULL; }
+bool work_queue_is_empty(work_queue_t* queue) { (void)queue; return true; }
+size_t work_queue_size(work_queue_t* queue) { (void)queue; return 0; }
+
+#else /* !__EMSCRIPTEN__ */
 
 // Internal helper functions
 static void* worker_thread_main(void* arg);
@@ -635,6 +714,8 @@ int thread_pool_set_work_stealing(thread_pool_t* pool, bool enable, uint32_t ste
     pool->enable_work_stealing = enable;
     pool->steal_attempts = steal_attempts;
     pthread_mutex_unlock(&pool->pool_mutex);
-    
+
     return 0;
 }
+
+#endif /* !__EMSCRIPTEN__ */

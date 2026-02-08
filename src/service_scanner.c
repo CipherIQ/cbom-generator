@@ -1290,7 +1290,7 @@ static const char* CRYPTO_LIBRARY_PATTERNS[] = {
 /**
  * Check if library name matches crypto library patterns
  */
-static bool is_crypto_library_name(const char* lib_name) {
+static bool __attribute__((unused)) is_crypto_library_name(const char* lib_name) {
     if (!lib_name) return false;
 
     for (int i = 0; CRYPTO_LIBRARY_PATTERNS[i]; i++) {
@@ -1304,7 +1304,7 @@ static bool is_crypto_library_name(const char* lib_name) {
 #ifdef __EMSCRIPTEN__
 
 /* WASM: no binary path resolution (/proc, readlink, access) */
-static char* get_binary_path_for_service(const service_metadata_t* metadata) {
+static char* __attribute__((unused)) get_binary_path_for_service(const service_metadata_t* metadata) {
     (void)metadata;
     return NULL;
 }

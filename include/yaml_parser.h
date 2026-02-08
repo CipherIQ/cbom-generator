@@ -68,7 +68,7 @@ typedef struct {
  * @param filepath Path to YAML file
  * @return Parsed YAML document, or NULL on error
  *
- * @note Caller must free returned document with yaml_free()
+ * @note Caller must free returned document with yaml_doc_free()
  * @note Returns NULL if file exceeds YAML_MAX_FILE_SIZE
  * @note Logs detailed error messages to stderr (TUI-aware)
  */
@@ -205,7 +205,7 @@ const char* yaml_node_type_string(yaml_node_t* node);
  *
  * @param doc YAML document to free
  */
-void yaml_free(yaml_doc_t* doc);
+void yaml_doc_free(yaml_doc_t* doc);
 
 /**
  * Validate YAML file without parsing

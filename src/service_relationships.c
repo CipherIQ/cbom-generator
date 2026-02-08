@@ -21,10 +21,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/sha.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
+#endif
 #include <json-c/json.h>
 
 // Forward declaration

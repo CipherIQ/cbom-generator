@@ -21,11 +21,256 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#ifndef __EMSCRIPTEN__
 #include <sys/timerfd.h>
 #include <sys/epoll.h>
 #include <sys/select.h>
+#endif
 #include <math.h>
 #include <stdio.h>
+
+#ifdef __EMSCRIPTEN__
+
+/* ── WASM stubs: simplified timeout management without timerfd/epoll ── */
+
+timeout_manager_t* timeout_manager_create(uint32_t global_timeout_ms, uint32_t default_timeout_ms) {
+    if (timeout_validate_config(global_timeout_ms) != 0 ||
+        timeout_validate_config(default_timeout_ms) != 0) return NULL;
+    timeout_manager_t* manager = calloc(1, sizeof(timeout_manager_t));
+    if (!manager) return NULL;
+    manager->global_timeout_ms = global_timeout_ms;
+    manager->default_timeout_ms = default_timeout_ms;
+    manager->graceful_degradation_enabled = true;
+    atomic_init(&manager->global_timeout_enabled, false);
+    atomic_init(&manager->global_timeout_expired, false);
+    atomic_init(&manager->next_context_id, 1);
+    atomic_init(&manager->monitor_running, false);
+    atomic_init(&manager->total_timeouts, 0);
+    atomic_init(&manager->total_cancellations, 0);
+    atomic_init(&manager->total_retries, 0);
+    manager->timerfd = -1;
+    manager->default_retry_policy = retry_policy_create_exponential(3, 100, 5000, 2.0);
+    return manager;
+}
+
+int timeout_manager_start(timeout_manager_t* manager) {
+    if (!manager) return -1;
+    if (manager->global_timeout_ms > 0) {
+        manager->global_deadline = timeout_add_ms(timeout_get_monotonic_time(),
+                                                  manager->global_timeout_ms);
+        atomic_store(&manager->global_timeout_enabled, true);
+    }
+    return 0;
+}
+
+int timeout_manager_stop(timeout_manager_t* manager) { (void)manager; return 0; }
+
+void timeout_manager_destroy(timeout_manager_t* manager) {
+    if (!manager) return;
+    timeout_context_t* ctx = manager->active_contexts;
+    while (ctx) {
+        timeout_context_t* next = ctx->next;
+        free(ctx);
+        ctx = next;
+    }
+    free(manager);
+}
+
+int timeout_manager_set_global_timeout(timeout_manager_t* manager, uint32_t timeout_ms) {
+    if (!manager || timeout_validate_config(timeout_ms) != 0) return -1;
+    manager->global_timeout_ms = timeout_ms;
+    manager->global_deadline = timeout_add_ms(timeout_get_monotonic_time(), timeout_ms);
+    atomic_store(&manager->global_timeout_enabled, true);
+    atomic_store(&manager->global_timeout_expired, false);
+    return 0;
+}
+
+bool timeout_manager_is_global_timeout_expired(timeout_manager_t* manager) {
+    if (!manager) return true;
+    if (atomic_load(&manager->global_timeout_expired)) return true;
+    if (!atomic_load(&manager->global_timeout_enabled)) return false;
+    struct timespec now = timeout_get_monotonic_time();
+    if (timeout_compare_timespec(&now, &manager->global_deadline) >= 0) {
+        atomic_store(&manager->global_timeout_expired, true);
+        return true;
+    }
+    return false;
+}
+
+uint64_t timeout_manager_get_global_remaining_ms(timeout_manager_t* manager) {
+    if (!manager || !atomic_load(&manager->global_timeout_enabled) ||
+        atomic_load(&manager->global_timeout_expired)) return 0;
+    struct timespec now = timeout_get_monotonic_time();
+    if (timeout_compare_timespec(&now, &manager->global_deadline) >= 0) return 0;
+    uint64_t remaining_ns = (uint64_t)(manager->global_deadline.tv_sec - now.tv_sec) * 1000000000ULL +
+                            (uint64_t)(manager->global_deadline.tv_nsec - now.tv_nsec);
+    return remaining_ns / 1000000;
+}
+
+timeout_context_t* timeout_context_create(timeout_manager_t* manager,
+                                         const char* operation_name,
+                                         uint32_t timeout_ms,
+                                         const retry_policy_t* retry_policy) {
+    if (!manager || !operation_name) return NULL;
+    if (timeout_ms == 0) timeout_ms = manager->default_timeout_ms;
+    if (timeout_validate_config(timeout_ms) != 0) return NULL;
+    timeout_context_t* context = calloc(1, sizeof(timeout_context_t));
+    if (!context) return NULL;
+    context->context_id = atomic_fetch_add(&manager->next_context_id, 1);
+    context->timeout_ms = timeout_ms;
+    strncpy(context->operation_name, operation_name, sizeof(context->operation_name) - 1);
+    context->start_time = timeout_get_monotonic_time();
+    context->deadline = timeout_add_ms(context->start_time, timeout_ms);
+    atomic_init(&context->is_cancelled, false);
+    atomic_init(&context->is_expired, false);
+    atomic_init(&context->is_destroyed, false);
+    if (retry_policy) context->retry_policy = *retry_policy;
+    else context->retry_policy = manager->default_retry_policy;
+    return context;
+}
+
+void timeout_context_destroy(timeout_context_t* context) {
+    if (!context) return;
+    if (atomic_exchange(&context->is_destroyed, true)) return;
+    free(context);
+}
+
+bool timeout_context_is_expired(timeout_context_t* context) {
+    if (!context) return true;
+    if (atomic_load(&context->is_expired)) return true;
+    struct timespec now = timeout_get_monotonic_time();
+    return timeout_compare_timespec(&now, &context->deadline) >= 0;
+}
+
+bool timeout_context_is_cancelled(timeout_context_t* context) {
+    return context ? atomic_load(&context->is_cancelled) : true;
+}
+
+uint64_t timeout_context_get_remaining_ms(timeout_context_t* context) {
+    if (!context || timeout_context_is_expired(context)) return 0;
+    struct timespec now = timeout_get_monotonic_time();
+    if (timeout_compare_timespec(&now, &context->deadline) >= 0) return 0;
+    uint64_t remaining_ns = (uint64_t)(context->deadline.tv_sec - now.tv_sec) * 1000000000ULL +
+                            (uint64_t)(context->deadline.tv_nsec - now.tv_nsec);
+    return remaining_ns / 1000000;
+}
+
+void timeout_context_cancel(timeout_context_t* context) {
+    if (context) atomic_store(&context->is_cancelled, true);
+}
+
+timeout_result_t timeout_execute_with_retry(timeout_context_t* context,
+                                           timeout_operation_t operation,
+                                           void* data) {
+    if (!context || !operation) return TIMEOUT_ERROR;
+    if (timeout_context_is_expired(context)) return TIMEOUT_EXPIRED;
+    context->current_attempt = 1;
+    return operation(data, context);
+}
+
+timeout_result_t timeout_execute_simple(timeout_manager_t* manager,
+                                       const char* operation_name,
+                                       uint32_t timeout_ms,
+                                       timeout_operation_t operation,
+                                       void* data) {
+    if (!manager || !operation_name || !operation) return TIMEOUT_ERROR;
+    timeout_context_t* context = timeout_context_create(manager, operation_name, timeout_ms, NULL);
+    if (!context) return TIMEOUT_ERROR;
+    timeout_result_t result = timeout_execute_with_retry(context, operation, data);
+    timeout_context_destroy(context);
+    return result;
+}
+
+retry_policy_t retry_policy_create_none(void) {
+    retry_policy_t p = {0}; p.type = RETRY_POLICY_NONE; p.max_attempts = 1; return p;
+}
+retry_policy_t retry_policy_create_fixed(uint32_t max_attempts, uint32_t delay_ms) {
+    retry_policy_t p = {0}; p.type = RETRY_POLICY_FIXED_DELAY;
+    p.max_attempts = max_attempts; p.base_delay_ms = delay_ms; p.max_delay_ms = delay_ms; return p;
+}
+retry_policy_t retry_policy_create_exponential(uint32_t max_attempts, uint32_t base_delay_ms,
+                                              uint32_t max_delay_ms, double multiplier) {
+    retry_policy_t p = {0}; p.type = RETRY_POLICY_EXPONENTIAL_BACKOFF;
+    p.max_attempts = max_attempts; p.base_delay_ms = base_delay_ms;
+    p.max_delay_ms = max_delay_ms; p.backoff_multiplier = multiplier;
+    p.jitter_enabled = true; return p;
+}
+retry_policy_t retry_policy_create_linear(uint32_t max_attempts, uint32_t base_delay_ms,
+                                         uint32_t increment_ms) {
+    retry_policy_t p = {0}; p.type = RETRY_POLICY_LINEAR_BACKOFF;
+    p.max_attempts = max_attempts; p.base_delay_ms = base_delay_ms;
+    p.linear_increment_ms = increment_ms; p.jitter_enabled = true; return p;
+}
+
+bool timeout_should_continue_on_missing_tool(timeout_manager_t* manager, const char* tool_name) {
+    (void)tool_name; return manager && manager->graceful_degradation_enabled;
+}
+bool timeout_should_continue_on_permission_error(timeout_manager_t* manager, const char* operation) {
+    (void)operation; return manager && manager->graceful_degradation_enabled;
+}
+void timeout_log_degradation(timeout_manager_t* manager, const char* reason, const char* fallback) {
+    (void)manager;
+    printf("WARNING: Graceful degradation: %s, continuing with: %s\n",
+           reason, fallback ? fallback : "reduced functionality");
+}
+
+int timeout_validate_config(uint32_t timeout_ms) {
+    if (timeout_ms < TIMEOUT_MIN_MS || timeout_ms > TIMEOUT_MAX_MS) return -1;
+    return 0;
+}
+bool timeout_is_monotonic_supported(void) {
+    struct timespec ts;
+    return clock_gettime(CLOCK_MONOTONIC, &ts) == 0;
+}
+struct timespec timeout_get_monotonic_time(void) {
+    struct timespec ts = {0};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts;
+}
+struct timespec timeout_add_ms(struct timespec base, uint32_t ms) {
+    struct timespec result = base;
+    uint64_t total_ns = (uint64_t)result.tv_nsec + (uint64_t)ms * 1000000;
+    result.tv_sec += (time_t)(total_ns / 1000000000);
+    result.tv_nsec = (long)(total_ns % 1000000000);
+    return result;
+}
+int timeout_compare_timespec(const struct timespec* a, const struct timespec* b) {
+    if (a->tv_sec < b->tv_sec) return -1;
+    if (a->tv_sec > b->tv_sec) return 1;
+    if (a->tv_nsec < b->tv_nsec) return -1;
+    if (a->tv_nsec > b->tv_nsec) return 1;
+    return 0;
+}
+uint32_t timeout_calculate_retry_delay(const retry_policy_t* policy, uint32_t attempt) {
+    if (!policy || attempt == 0) return 0;
+    uint32_t delay_ms = 0;
+    switch (policy->type) {
+        case RETRY_POLICY_NONE: return 0;
+        case RETRY_POLICY_FIXED_DELAY: delay_ms = policy->base_delay_ms; break;
+        case RETRY_POLICY_EXPONENTIAL_BACKOFF:
+            delay_ms = policy->base_delay_ms * (uint32_t)pow(policy->backoff_multiplier, attempt - 1);
+            if (delay_ms > policy->max_delay_ms) delay_ms = policy->max_delay_ms;
+            break;
+        case RETRY_POLICY_LINEAR_BACKOFF:
+            delay_ms = policy->base_delay_ms + (policy->linear_increment_ms * (attempt - 1));
+            if (policy->max_delay_ms > 0 && delay_ms > policy->max_delay_ms) delay_ms = policy->max_delay_ms;
+            break;
+    }
+    return delay_ms;
+}
+
+timeout_statistics_t timeout_manager_get_statistics(timeout_manager_t* manager) {
+    timeout_statistics_t stats = {0};
+    if (!manager) return stats;
+    stats.total_timeouts = atomic_load(&manager->total_timeouts);
+    stats.total_cancellations = atomic_load(&manager->total_cancellations);
+    stats.total_retries = atomic_load(&manager->total_retries);
+    stats.global_timeout_expired = atomic_load(&manager->global_timeout_expired);
+    stats.global_remaining_ms = timeout_manager_get_global_remaining_ms(manager);
+    return stats;
+}
+
+#else /* !__EMSCRIPTEN__ */
 
 // Internal helper functions
 static void* timeout_monitor_thread(void* arg);
@@ -681,6 +926,8 @@ timeout_statistics_t timeout_manager_get_statistics(timeout_manager_t* manager) 
         context = context->next;
     }
     pthread_mutex_unlock(&manager->contexts_mutex);
-    
+
     return stats;
 }
+
+#endif /* !__EMSCRIPTEN__ */

@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <openssl/sha.h>
+#include "sha256_portable.h"
 #include <json-c/json.h>
 
 // TLS 1.3 cipher suite definitions (fixed list - no parser needed)

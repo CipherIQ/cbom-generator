@@ -159,7 +159,7 @@ int yaml_config_parser_parse(
     // Load YAML document using Phase 1 parser
     yaml_doc_t* doc = yaml_load_file(filepath);
     if (!doc || !doc->is_valid) {
-        if (doc) yaml_free(doc);
+        if (doc) yaml_doc_free(doc);
         return -1;
     }
 
@@ -167,7 +167,7 @@ int yaml_config_parser_parse(
     int capacity = 32;
     config_directive_t* result = malloc(capacity * sizeof(config_directive_t));
     if (!result) {
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return -1;
     }
 
@@ -177,18 +177,18 @@ int yaml_config_parser_parse(
     yaml_node_t* root = yaml_document_get_root_node(&doc->document);
     if (!root) {
         free(result);
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return -1;
     }
 
     // Flatten YAML tree to directives
     if (flatten_yaml_node(doc, root, NULL, &result, &size, &capacity) < 0) {
         config_directives_free(result, size);
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return -1;
     }
 
-    yaml_free(doc);
+    yaml_doc_free(doc);
 
     *directives = result;
     *count = size;

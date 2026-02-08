@@ -814,62 +814,73 @@ static int run_basic_certificate_scan(asset_store_t *store) {
     return total_cert_count >= 0 ? 0 : -1;
 }
 
+#ifdef __EMSCRIPTEN__
+// WASM: SHA-256 not available without OpenSSL
+static char* calculate_string_sha256(const char* data) {
+    (void)data;
+    return NULL;
+}
+static char* calculate_file_sha256(const char* filepath) {
+    (void)filepath;
+    return NULL;
+}
+#else
 // Calculate SHA-256 hash of a string
 static char* calculate_string_sha256(const char* data) {
     if (!data) return NULL;
-    
+
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (!ctx) return NULL;
-    
+
     if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
         EVP_MD_CTX_free(ctx);
         return NULL;
     }
-    
+
     if (EVP_DigestUpdate(ctx, data, strlen(data)) != 1) {
         EVP_MD_CTX_free(ctx);
         return NULL;
     }
-    
+
     unsigned char hash[EVP_MAX_MD_SIZE];
     unsigned int hash_len;
     if (EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
         EVP_MD_CTX_free(ctx);
         return NULL;
     }
-    
+
     EVP_MD_CTX_free(ctx);
-    
+
     char *hex_string = malloc(hash_len * 2 + 1);
     if (!hex_string) return NULL;
-    
+
     for (unsigned int i = 0; i < hash_len; i++) {
         sprintf(hex_string + (i * 2), "%02x", hash[i]);
     }
     hex_string[hash_len * 2] = '\0';
-    
+
     return hex_string;
 }
 
 // Calculate SHA-256 hash of a file
 static char* calculate_file_sha256(const char* filepath) {
     if (!filepath) return NULL;
-    
+
     FILE *file = fopen(filepath, "rb");
     if (!file) return NULL;
-    
+
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (!ctx) {
         fclose(file);
         return NULL;
     }
-    
+
     if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
         EVP_MD_CTX_free(ctx);
         fclose(file);
         return NULL;
     }
-    
+
     unsigned char buffer[8192];
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
@@ -879,7 +890,7 @@ static char* calculate_file_sha256(const char* filepath) {
             return NULL;
         }
     }
-    
+
     unsigned char hash[EVP_MAX_MD_SIZE];
     unsigned int hash_len;
     if (EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
@@ -887,21 +898,22 @@ static char* calculate_file_sha256(const char* filepath) {
         fclose(file);
         return NULL;
     }
-    
+
     EVP_MD_CTX_free(ctx);
     fclose(file);
-    
+
     // Convert to hex string
     char *hex_hash = malloc(hash_len * 2 + 1);
     if (!hex_hash) return NULL;
-    
+
     for (unsigned int i = 0; i < hash_len; i++) {
         sprintf(hex_hash + (i * 2), "%02x", hash[i]);
     }
     hex_hash[hash_len * 2] = '\0';
-    
+
     return hex_hash;
 }
+#endif /* __EMSCRIPTEN__ */
 
 // Generate current timestamp in ISO 8601 format
 static char* generate_timestamp(void) {
@@ -2326,7 +2338,7 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
             }
         }
     }
-    // Asset store stats available if needed for debugging
+    (void)app_count_in_store; // used only for debugging
 
     // Note: component_count and relationship_count removed per CycloneDX 1.6 compliance
     // These values are derivable from the components and relationships arrays
@@ -3402,15 +3414,15 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                     }
                 }
 
-                // Phase 4: Helper function to add SSH cipher suite entry
-                inline void add_ssh_cipher_suite(json_object* array, const char* name, const char* algo_ref) {
-                    json_object* entry = json_object_new_object();
-                    json_object_object_add(entry, "name", json_object_new_string(name));
-                    json_object* algos = json_object_new_array();
-                    json_object_array_add(algos, json_object_new_string(algo_ref));
-                    json_object_object_add(entry, "algorithms", algos);
-                    json_object_array_add(array, entry);
-                }
+                // Phase 4: Helper macro to add SSH cipher suite entry
+                #define ADD_SSH_CIPHER_SUITE(array, name, algo_ref) do { \
+                    json_object* _entry = json_object_new_object(); \
+                    json_object_object_add(_entry, "name", json_object_new_string(name)); \
+                    json_object* _algos = json_object_new_array(); \
+                    json_object_array_add(_algos, json_object_new_string(algo_ref)); \
+                    json_object_object_add(_entry, "algorithms", _algos); \
+                    json_object_array_add(array, _entry); \
+                } while(0)
 
                 // Add protocolProperties for protocols (Phase 4)
                 if (asset->type == ASSET_TYPE_PROTOCOL && asset->metadata_json) {
@@ -3523,11 +3535,11 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                                     json_object* ssh_suites = json_object_new_array();
 
                                     // Add 3 default modern SSH cipher suites (v1.5: algo: prefix)
-                                    add_ssh_cipher_suite(ssh_suites, "chacha20-poly1305@openssh.com",
+                                    ADD_SSH_CIPHER_SUITE(ssh_suites, "chacha20-poly1305@openssh.com",
                                                         "algo:chacha20-poly1305");
-                                    add_ssh_cipher_suite(ssh_suites, "aes256-gcm@openssh.com",
+                                    ADD_SSH_CIPHER_SUITE(ssh_suites, "aes256-gcm@openssh.com",
                                                         "algo:aes-256-gcm");
-                                    add_ssh_cipher_suite(ssh_suites, "aes128-gcm@openssh.com",
+                                    ADD_SSH_CIPHER_SUITE(ssh_suites, "aes128-gcm@openssh.com",
                                                         "algo:aes-128-gcm");
 
                                     json_object_object_add(protocol_props, "cipherSuites", ssh_suites);
@@ -7248,12 +7260,17 @@ static int run_walking_skeleton(void) {
         if (g_output_mode != OUTPUT_MODE_TUI) fprintf(stderr, "INFO: Created %d service-certificate AUTHENTICATES_WITH relationships\n", service_cert_links);
 
         // Match private keys to certificates (SIGNS relationships)
+#ifndef __EMSCRIPTEN__
         int key_cert_matches = key_manager_match_keys_to_certificates(store);
         if (g_output_mode != OUTPUT_MODE_TUI) fprintf(stderr, "INFO: Created %d key-certificate SIGNS relationships\n", key_cert_matches);
 
         // Build certificate chains (ISSUED_BY relationships)
         int cert_chains = key_manager_build_certificate_chains(store);
         if (g_output_mode != OUTPUT_MODE_TUI) fprintf(stderr, "INFO: Created %d certificate chain ISSUED_BY relationships\n", cert_chains);
+#else
+        int key_cert_matches = 0;
+        int cert_chains = 0;
+#endif
 
         // Store relationship statistics for metadata output (Issue #4)
         g_key_cert_matches = key_cert_matches;
@@ -7513,6 +7530,7 @@ static int run_walking_skeleton(void) {
     }
 
 skip_sequential_scanners:
+    ; // empty statement required before declaration in C11
     // Phase 4.5: YAML Plugin Service Discovery and Config Extraction
     // This runs AFTER built-in scanners in both parallel and sequential paths
 
@@ -7817,6 +7835,7 @@ skip_sequential_scanners:
     if (output_file != stdout) {
         fclose(output_file);
 
+#ifndef __EMSCRIPTEN__
         // Generate checksum if output file was created
         if (result == 0) {
             char checksum_file[PATH_MAX];
@@ -7830,6 +7849,7 @@ skip_sequential_scanners:
                 ERROR_LOG_INFO(g_error_collector, "main", "Generated checksum file", checksum_file);
             }
         }
+#endif
     }
 
     // Update TUI with final asset counts

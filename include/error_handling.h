@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <pthread.h>
 #include <json-c/json.h>
 
 // Error categories

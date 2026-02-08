@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <stddef.h>
+#include <pthread.h>
 
 // Forward declarations
 struct asset_store;

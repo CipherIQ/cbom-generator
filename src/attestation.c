@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/sha.h>
@@ -25,6 +26,7 @@
 #include <openssl/buffer.h>
 #include <openssl/rsa.h>
 #include <openssl/err.h>
+#endif
 
 // Password callback that returns provided password or empty (prevents stdin prompts)
 static int password_callback(char *buf, int size, int rwflag, void *userdata) {

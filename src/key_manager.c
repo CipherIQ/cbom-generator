@@ -20,11 +20,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
 #include <openssl/x509.h>
 #include <openssl/sha.h>
 #include <openssl/bio.h>
 #include <openssl/pem.h>
+#endif
 #include <json-c/json.h>
 
 // Structure to track unique keys

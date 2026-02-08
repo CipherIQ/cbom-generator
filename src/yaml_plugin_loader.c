@@ -626,7 +626,7 @@ yaml_plugin_t* yaml_plugin_load(const char* filepath) {
     yaml_plugin_t* plugin = calloc(1, sizeof(yaml_plugin_t));
     if (!plugin) {
         log_printf("ERROR: Failed to allocate memory for plugin\n");
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return NULL;
     }
 
@@ -634,7 +634,7 @@ yaml_plugin_t* yaml_plugin_load(const char* filepath) {
     if (!yaml_plugin_load_metadata(doc, &plugin->metadata)) {
         log_printf("ERROR: Failed to load plugin metadata from '%s'\n", filepath);
         yaml_plugin_free(plugin);
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return NULL;
     }
 
@@ -642,7 +642,7 @@ yaml_plugin_t* yaml_plugin_load(const char* filepath) {
     if (!yaml_plugin_load_detection(doc, &plugin->detection)) {
         log_printf("ERROR: Failed to load plugin detection from '%s'\n", filepath);
         yaml_plugin_free(plugin);
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return NULL;
     }
 
@@ -650,11 +650,11 @@ yaml_plugin_t* yaml_plugin_load(const char* filepath) {
     if (!yaml_plugin_load_config_extraction(doc, &plugin->config_extraction)) {
         log_printf("ERROR: Failed to load plugin config_extraction from '%s'\n", filepath);
         yaml_plugin_free(plugin);
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return NULL;
     }
 
-    yaml_free(doc);
+    yaml_doc_free(doc);
     return plugin;
 }
 

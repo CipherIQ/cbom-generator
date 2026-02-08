@@ -21,9 +21,15 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef __EMSCRIPTEN__
 #include <wordexp.h>
+#endif
 #include <errno.h>
+#ifdef __linux__
 #include <linux/limits.h>
+#elif !defined(PATH_MAX)
+#define PATH_MAX 4096
+#endif
 
 // v1.8.1: Access global config for cross-arch mode
 extern cbom_config_t g_cbom_config;
@@ -73,6 +79,11 @@ bool binary_detector_expand_pattern(const char* pattern, char* found_path) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // WASM: no wordexp, no binary executables to discover
+    (void)found_path;
+    return false;
+#else
     // Use wordexp for glob expansion
     wordexp_t exp_result;
     int ret = wordexp(pattern, &exp_result, WRDE_NOCMD);  // WRDE_NOCMD prevents command execution
@@ -96,6 +107,7 @@ bool binary_detector_expand_pattern(const char* pattern, char* found_path) {
 
     wordfree(&exp_result);
     return found;
+#endif
 }
 
 /**

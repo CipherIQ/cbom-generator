@@ -21,6 +21,36 @@
 #include "tui.h"
 #include "secure_memory.h"
 #include "provenance.h"
+
+#ifdef __EMSCRIPTEN__
+
+/* ── WASM stubs: TUI disabled (no ncurses) ─────────────────────────── */
+
+tui_context_t* g_tui_context = NULL;
+output_mode_t g_output_mode = OUTPUT_MODE_NORMAL;
+
+tui_context_t* tui_init(void) { return NULL; }
+void tui_start(tui_context_t* ctx) { (void)ctx; }
+void tui_stop(tui_context_t* ctx) { (void)ctx; }
+void tui_wait_for_completion(tui_context_t* ctx) { (void)ctx; }
+void tui_destroy(tui_context_t* ctx) { (void)ctx; }
+void tui_log(tui_message_type_t type, scanner_type_t scanner,
+             const char* scanner_name, size_t files, size_t found,
+             const char* current_file, const char* target_path) {
+    (void)type; (void)scanner; (void)scanner_name; (void)files;
+    (void)found; (void)current_file; (void)target_path;
+}
+void tui_update_assets(size_t total, size_t certs, size_t keys, size_t algos,
+                       size_t libs, size_t protos, size_t svcs, size_t suites) {
+    (void)total; (void)certs; (void)keys; (void)algos;
+    (void)libs; (void)protos; (void)svcs; (void)suites;
+}
+scanner_type_t tui_scanner_type_from_name(const char* name) {
+    (void)name; return SCANNER_UNKNOWN;
+}
+
+#else /* !__EMSCRIPTEN__ */
+
 #include <ncurses.h>
 #include <string.h>
 #include <unistd.h>
@@ -681,3 +711,5 @@ scanner_type_t tui_scanner_type_from_name(const char* name) {
 
     return SCANNER_UNKNOWN;
 }
+
+#endif /* !__EMSCRIPTEN__ */

@@ -14,6 +14,12 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+# WASM/Emscripten build detection
+if(EMSCRIPTEN)
+    message(STATUS "Building for WebAssembly via Emscripten")
+    set(CBOM_WASM ON)
+endif()
+
 # Build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -22,15 +28,18 @@ endif()
 # Reproducible builds - pin compiler versions and add file prefix mapping
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.")
 
-# Security and hardening flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-strong")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=2")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
-
-# Additional security flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat=2 -Wformat-security")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
+if(NOT EMSCRIPTEN)
+    # Security and hardening flags (native only)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-strong")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=2")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wformat=2 -Wformat-security")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-z,relro,-z,now")
+else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
+endif()
 
 # Release optimizations
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 -DNDEBUG")
@@ -38,38 +47,69 @@ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 -DNDEBUG")
 # Debug flags
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0 -DDEBUG")
 
-# Link flags for security
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-z,relro,-z,now")
-
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# Find required packages with pinned versions
-find_package(PkgConfig REQUIRED)
+if(NOT EMSCRIPTEN)
+    # Find required packages with pinned versions
+    find_package(PkgConfig REQUIRED)
 
-# OpenSSL 3.0+ required (3.0, 3.1, 3.2, 3.3, 3.4, 3.5+ for PQC support)
-find_package(OpenSSL 3.0 REQUIRED)
-if(OPENSSL_VERSION VERSION_LESS "3.0.0")
-    message(FATAL_ERROR "OpenSSL version must be 3.0 or newer, found ${OPENSSL_VERSION}")
+    # OpenSSL 3.0+ required (3.0, 3.1, 3.2, 3.3, 3.4, 3.5+ for PQC support)
+    find_package(OpenSSL 3.0 REQUIRED)
+    if(OPENSSL_VERSION VERSION_LESS "3.0.0")
+        message(FATAL_ERROR "OpenSSL version must be 3.0 or newer, found ${OPENSSL_VERSION}")
+    endif()
+
+    # json-c library
+    pkg_check_modules(JSON_C REQUIRED json-c>=0.15)
+
+    # libcurl
+    find_package(CURL REQUIRED)
+
+    # pthread
+    find_package(Threads REQUIRED)
+
+    # ncurses for TUI
+    find_package(Curses REQUIRED)
+
+    # libyaml for YAML plugin support (v1.3)
+    pkg_check_modules(YAML REQUIRED yaml-0.1>=0.2.2)
+
+    # jansson for JSON Schema validation (v1.3)
+    pkg_check_modules(JANSSON REQUIRED jansson>=2.13)
+else()
+    # WASM dependencies — pre-built static libraries from deps/
+    set(WASM_DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps")
+
+    # json-c: code uses #include <json-c/json.h>, so we create a staging directory
+    # that merges source headers + build-generated headers under a json-c/ prefix
+    set(JSONC_SRC "${WASM_DEPS_DIR}/json-c-json-c-0.17-20230812")
+    set(JSONC_STAGE "${CMAKE_CURRENT_BINARY_DIR}/wasm-include/json-c")
+    file(MAKE_DIRECTORY "${JSONC_STAGE}")
+    file(GLOB _jsonc_src_h "${JSONC_SRC}/*.h")
+    file(GLOB _jsonc_build_h "${JSONC_SRC}/build-wasm/*.h")
+    foreach(_h IN LISTS _jsonc_src_h _jsonc_build_h)
+        get_filename_component(_hname "${_h}" NAME)
+        if(NOT EXISTS "${JSONC_STAGE}/${_hname}")
+            file(CREATE_LINK "${_h}" "${JSONC_STAGE}/${_hname}" SYMBOLIC)
+        endif()
+    endforeach()
+    set(JSON_C_LIBRARIES "${JSONC_SRC}/build-wasm/libjson-c.a")
+    set(JSON_C_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/wasm-include")
+
+    # libyaml
+    set(YAML_LIBRARIES "${WASM_DEPS_DIR}/libyaml-0.2.5/build-wasm/libyaml.a")
+    set(YAML_INCLUDE_DIRS "${WASM_DEPS_DIR}/libyaml-0.2.5/include")
+
+    # jansson
+    set(JANSSON_LIBRARIES "${WASM_DEPS_DIR}/jansson-2.14/build-wasm/lib/libjansson.a")
+    set(JANSSON_INCLUDE_DIRS "${WASM_DEPS_DIR}/jansson-2.14/build-wasm/include")
+
+    # Provenance variable defaults for WASM
+    set(CBOM_OPENSSL_VER "N/A")
+    set(CURL_VERSION_STRING "N/A")
+    set(JSON_C_VERSION "0.17")
 endif()
-
-# json-c library
-pkg_check_modules(JSON_C REQUIRED json-c>=0.15)
-
-# libcurl
-find_package(CURL REQUIRED)
-
-# pthread
-find_package(Threads REQUIRED)
-
-# ncurses for TUI
-find_package(Curses REQUIRED)
-
-# libyaml for YAML plugin support (v1.3)
-pkg_check_modules(YAML REQUIRED yaml-0.1>=0.2.2)
-
-# jansson for JSON Schema validation (v1.3)
-pkg_check_modules(JANSSON REQUIRED jansson>=2.13)
 
 # Capture git information for provenance
 find_package(Git QUIET)
@@ -105,26 +145,28 @@ else()
     set(GIT_DIRTY "unknown")
 endif()
 
-# Get JSON-C version
-execute_process(
-    COMMAND pkg-config --modversion json-c
-    OUTPUT_VARIABLE JSON_C_VERSION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-if(NOT JSON_C_VERSION)
-    set(JSON_C_VERSION "unknown")
-endif()
+if(NOT EMSCRIPTEN)
+    # Get JSON-C version
+    execute_process(
+        COMMAND pkg-config --modversion json-c
+        OUTPUT_VARIABLE JSON_C_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT JSON_C_VERSION)
+        set(JSON_C_VERSION "unknown")
+    endif()
 
-# Get OpenSSL version string - use pkg-config directly for reliability
-execute_process(
-    COMMAND pkg-config --modversion openssl
-    OUTPUT_VARIABLE CBOM_OPENSSL_VER
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-if(NOT CBOM_OPENSSL_VER)
-    set(CBOM_OPENSSL_VER "3.0.2")  # Fallback to known version
+    # Get OpenSSL version string - use pkg-config directly for reliability
+    execute_process(
+        COMMAND pkg-config --modversion openssl
+        OUTPUT_VARIABLE CBOM_OPENSSL_VER
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT CBOM_OPENSSL_VER)
+        set(CBOM_OPENSSL_VER "3.0.2")  # Fallback to known version
+    endif()
 endif()
 
 
@@ -210,39 +252,97 @@ set(SOURCES
 
 )
 
+# WASM: swap OpenSSL backend for stub, exclude OpenSSL-dependent modules
+if(EMSCRIPTEN)
+    list(REMOVE_ITEM SOURCES src/crypto_parser_openssl.c)
+    list(APPEND SOURCES src/crypto_parser_stub.c)
+
+    # Remove source files that depend heavily on OpenSSL / Linux APIs
+    list(REMOVE_ITEM SOURCES
+        src/attestation.c
+        src/service_relationships.c
+        src/detection/port_detector.c
+        src/parsers/openssl_cipher_parser.c
+        src/parsers/json_parser.c
+        src/plugin_manager.c
+        src/key_manager.c
+        src/privacy.c
+        src/dedup.c
+        src/component_factory.c
+    )
+    # Add WASM stubs for the removed modules
+    list(APPEND SOURCES src/wasm_stubs.c)
+endif()
+
 # Main executable (cbom_serializer.c added directly here, not in SOURCES)
 add_executable(cbom-generator src/main.c src/cbom_serializer.c ${SOURCES})
 
-# Link libraries
-target_link_libraries(cbom-generator PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    ${JSON_C_LIBRARIES}
-    ${CURL_LIBRARIES}
-    ${CURSES_LIBRARIES}
-    ${YAML_LIBRARIES}
-    ${JANSSON_LIBRARIES}
-    Threads::Threads
-    dl  # dynamic loading library for plugins
-    m   # math library
-)
+if(EMSCRIPTEN)
+    # WASM compile definitions
+    target_compile_definitions(cbom-generator PRIVATE
+        CBOM_NO_CURL CBOM_NO_TUI CBOM_NO_PTHREADS
+        CBOM_NO_DLOPEN CBOM_NO_SERVICE_DISCOVERY)
 
-# Include directories for dependencies
-target_include_directories(cbom-generator PRIVATE
-    ${JSON_C_INCLUDE_DIRS}
-    ${CURL_INCLUDE_DIRS}
-    ${CURSES_INCLUDE_DIRS}
-    ${YAML_INCLUDE_DIRS}
-    ${JANSSON_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_BINARY_DIR}/src
-)
+    # WASM link libraries (pre-built static archives, no jansson — conflicts with json-c symbols)
+    target_link_libraries(cbom-generator PRIVATE
+        ${JSON_C_LIBRARIES}
+        ${YAML_LIBRARIES}
+    )
 
-# Compiler definitions
-target_compile_definitions(cbom-generator PRIVATE ${JSON_C_CFLAGS_OTHER})
+    # WASM include directories
+    target_include_directories(cbom-generator PRIVATE
+        ${JSON_C_INCLUDE_DIRS}
+        ${YAML_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_BINARY_DIR}/src
+    )
+
+    # Emscripten link flags
+    target_link_options(cbom-generator PRIVATE
+        "SHELL:-s WASM=1"
+        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+        "SHELL:-s MAXIMUM_MEMORY=256MB"
+        "SHELL:-s MODULARIZE=1"
+        "SHELL:-s EXPORT_ES6=1"
+        "SHELL:-s EXPORT_NAME=createCbomGenerator"
+        "SHELL:-s FORCE_FILESYSTEM=1"
+        "SHELL:-s INVOKE_RUN=0"
+        "SHELL:-s EXIT_RUNTIME=0"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['callMain','FS']"
+        "SHELL:-s STACK_SIZE=1048576"
+    )
+else()
+    # Native link libraries
+    target_link_libraries(cbom-generator PRIVATE
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        ${JSON_C_LIBRARIES}
+        ${CURL_LIBRARIES}
+        ${CURSES_LIBRARIES}
+        ${YAML_LIBRARIES}
+        ${JANSSON_LIBRARIES}
+        Threads::Threads
+        dl  # dynamic loading library for plugins
+        m   # math library
+    )
+
+    # Native include directories
+    target_include_directories(cbom-generator PRIVATE
+        ${JSON_C_INCLUDE_DIRS}
+        ${CURL_INCLUDE_DIRS}
+        ${CURSES_INCLUDE_DIRS}
+        ${YAML_INCLUDE_DIRS}
+        ${JANSSON_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_BINARY_DIR}/src
+    )
+
+    # Compiler definitions
+    target_compile_definitions(cbom-generator PRIVATE ${JSON_C_CFLAGS_OTHER})
+endif()
 
 # Install target
 install(TARGETS cbom-generator DESTINATION bin)
 
+if(NOT EMSCRIPTEN)
 # Enable testing
 enable_testing()
 
@@ -1032,3 +1132,5 @@ add_custom_target(validate-property-mappings
 # Add all checks to a comprehensive check target
 add_custom_target(check-all)
 add_dependencies(check-all static-analysis check-orphan-code validate-schemas validate-normalization validate-property-mappings)
+
+endif() # NOT EMSCRIPTEN

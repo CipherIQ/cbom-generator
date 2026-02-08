@@ -3287,6 +3287,7 @@ void public_key_params_destroy(public_key_params_t* params) {
 
 static __thread char last_error[256] = "Crypto parsing not available in WASM";
 
+__attribute__((unused))
 static void set_error(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);

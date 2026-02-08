@@ -1867,6 +1867,7 @@ bool key_scanner_validate_no_pem_headers_in_output(const char* output) {
 
 static __thread char last_error[256] = "Key parsing not available in WASM";
 
+__attribute__((unused))
 static void set_error(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);

@@ -245,7 +245,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
                      err ? err : "unknown error");
         }
         if (doc) {
-            yaml_free(doc);
+            yaml_doc_free(doc);
         }
         return -1;
     }
@@ -256,7 +256,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
         if (errbuf) {
             snprintf(errbuf, errbuf_len, "Root node must be a YAML mapping");
         }
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return -1;
     }
 
@@ -271,7 +271,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
         if (errbuf) {
             snprintf(errbuf, errbuf_len, "Unsupported schema version: %d (expected 1)", version);
         }
-        yaml_free(doc);
+        yaml_doc_free(doc);
         return -1;
     }
 
@@ -289,7 +289,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
                          lib_count, MAX_DYNAMIC_LIBRARIES);
             }
             free(lib_items);
-            yaml_free(doc);
+            yaml_doc_free(doc);
             return -1;
         }
 
@@ -299,7 +299,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
             if (!dynamic_crypto_libraries) {
                 if (errbuf) snprintf(errbuf, errbuf_len, "Memory allocation failed");
                 free(lib_items);
-                yaml_free(doc);
+                yaml_doc_free(doc);
                 return -1;
             }
             dynamic_crypto_libraries_capacity = lib_count;
@@ -360,7 +360,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
                          app_count, MAX_DYNAMIC_APPS);
             }
             free(app_items);
-            yaml_free(doc);
+            yaml_doc_free(doc);
             return -1;
         }
 
@@ -370,7 +370,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
             if (!dynamic_embedded_apps) {
                 if (errbuf) snprintf(errbuf, errbuf_len, "Memory allocation failed");
                 free(app_items);
-                yaml_free(doc);
+                yaml_doc_free(doc);
                 return -1;
             }
             dynamic_embedded_apps_capacity = app_count;
@@ -418,7 +418,7 @@ int crypto_registry_load_from_file(const char *path, char *errbuf, size_t errbuf
     }
 
     // Cleanup
-    yaml_free(doc);
+    yaml_doc_free(doc);
 
     dynamic_registry_loaded = true;
     return 0;

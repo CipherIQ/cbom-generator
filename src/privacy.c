@@ -21,9 +21,11 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <sys/types.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
+#endif
 #include <regex.h>
 #include <errno.h>
 

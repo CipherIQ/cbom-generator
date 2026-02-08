@@ -28,7 +28,9 @@
 #include <string.h>
 #include <time.h>
 #include <json-c/json.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/x509.h>
+#endif
 
 // Forward declaration for service library dependency detection
 extern int detect_service_library_dependencies_simple(struct asset_store* store,

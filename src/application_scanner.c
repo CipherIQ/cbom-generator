@@ -34,7 +34,7 @@
 #include "thread_pool.h"      // For parallel execution
 #include "tui.h"              // For TUI progress updates
 #include <json-c/json.h>
-#include <openssl/sha.h>       // v1.8.6: Content-addressed application IDs
+#include "sha256_portable.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

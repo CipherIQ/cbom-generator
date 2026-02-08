@@ -21,7 +21,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
+#endif
 #include <sys/stat.h>
 #include <time.h>
 

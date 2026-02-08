@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <openssl/sha.h>
+#include "sha256_portable.h"
 #include <json-c/json.h>
 
 #define DEFAULT_BUCKET_COUNT 1024

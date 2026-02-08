@@ -26,10 +26,67 @@
 #include <errno.h>
 #include <pthread.h>
 #include <libgen.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
+#endif
 #include <json-c/json.h>
+
+#ifdef __EMSCRIPTEN__
+
+/* ── WASM stubs: caching disabled (no OpenSSL for hashing/encryption) ─ */
+
+cache_handle_t* cache_create(const cache_config_t *config) { (void)config; return NULL; }
+void cache_destroy(cache_handle_t *cache) { (void)cache; }
+int cache_get_entry(cache_handle_t *cache, const char *file_path, cache_entry_t **entry) {
+    (void)cache; (void)file_path; if (entry) *entry = NULL; return -1;
+}
+int cache_put_entry(cache_handle_t *cache, const char *file_path,
+                   const char **asset_ids, size_t asset_count) {
+    (void)cache; (void)file_path; (void)asset_ids; (void)asset_count; return 0;
+}
+int cache_invalidate_entry(cache_handle_t *cache, const char *file_path) {
+    (void)cache; (void)file_path; return 0;
+}
+bool cache_is_file_cached(cache_handle_t *cache, const char *file_path) {
+    (void)cache; (void)file_path; return false;
+}
+bool cache_validate_file(const cache_entry_t *entry, const char *file_path) {
+    (void)entry; (void)file_path; return false;
+}
+int cache_update_file_metadata(cache_entry_t *entry, const char *file_path) {
+    (void)entry; (void)file_path; return 0;
+}
+int cache_cleanup_expired(cache_handle_t *cache) { (void)cache; return 0; }
+int cache_cleanup_invalid(cache_handle_t *cache) { (void)cache; return 0; }
+int cache_enforce_size_limit(cache_handle_t *cache) { (void)cache; return 0; }
+int cache_full_cleanup(cache_handle_t *cache) { (void)cache; return 0; }
+cache_stats_t cache_get_stats(cache_handle_t *cache) {
+    (void)cache; cache_stats_t s = {0}; return s;
+}
+void cache_reset_stats(cache_handle_t *cache) { (void)cache; }
+int cache_export_stats(cache_handle_t *cache, const char *output_file) {
+    (void)cache; (void)output_file; return 0;
+}
+cache_entry_t* cache_entry_create(const char *file_path) { (void)file_path; return NULL; }
+void cache_entry_destroy(cache_entry_t *entry) { (void)entry; }
+cache_entry_t* cache_entry_clone(const cache_entry_t *entry) { (void)entry; return NULL; }
+int cache_encrypt_data(const char *plaintext, size_t plaintext_len,
+                      const char *key, char **ciphertext, size_t *ciphertext_len) {
+    (void)plaintext; (void)plaintext_len; (void)key; (void)ciphertext; (void)ciphertext_len; return -1;
+}
+int cache_decrypt_data(const char *ciphertext, size_t ciphertext_len,
+                      const char *key, char **plaintext, size_t *plaintext_len) {
+    (void)ciphertext; (void)ciphertext_len; (void)key; (void)plaintext; (void)plaintext_len; return -1;
+}
+char* cache_generate_file_hash(const char *file_path) { (void)file_path; return NULL; }
+bool cache_is_entry_expired(const cache_entry_t *entry, int retention_days) {
+    (void)entry; (void)retention_days; return true;
+}
+int cache_create_directory(const char *cache_dir) { (void)cache_dir; return 0; }
+
+#else /* !__EMSCRIPTEN__ */
 
 #define CACHE_VERSION "1.0"
 #define CACHE_METADATA_FILE "cache_metadata.json"
@@ -1102,3 +1159,5 @@ int cache_export_stats(cache_handle_t *cache, const char *output_file) {
     pthread_mutex_unlock(&cache->mutex);
     return 0;
 }
+
+#endif /* !__EMSCRIPTEN__ */

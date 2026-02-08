@@ -24,8 +24,10 @@
 
 #define _GNU_SOURCE
 #include "config_parser.h"
+#ifndef __EMSCRIPTEN__
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

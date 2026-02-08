@@ -207,9 +207,9 @@ crypto_config_t* config_extractor_extract(
     // Iterate through config extraction rules from plugin
     plugin_config_extraction_t* extraction = &plugin->config_extraction;
 
-    int files_attempted = 0;
-    int files_parsed = 0;
-    int directives_found = 0;
+    int files_attempted __attribute__((unused)) = 0;
+    int files_parsed __attribute__((unused)) = 0;
+    int directives_found __attribute__((unused)) = 0;
 
     for (int i = 0; i < extraction->file_count; i++) {
         config_file_rule_t* file_rule = &extraction->files[i];

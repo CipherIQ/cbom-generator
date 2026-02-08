@@ -49,7 +49,7 @@ typedef struct {
 
 #ifdef __EMSCRIPTEN__
 /* WASM: stub — no ELF binaries in browser environment */
-static int is_elf_executable(const char* path) {
+static int __attribute__((unused)) is_elf_executable(const char* path) {
     (void)path;
     return 0;
 }
@@ -512,7 +512,7 @@ static char* resolve_package_for_path_uncached(const char* path) {
 #endif /* __EMSCRIPTEN__ */
 
 // Cached wrapper (thread-safe)
-static char* cached_resolve_package_for_path(const char* path) {
+static char* __attribute__((unused)) cached_resolve_package_for_path(const char* path) {
     if (!path) return NULL;
 
     // Skip package resolution for cross-arch scanning (host package manager is wrong)
@@ -582,7 +582,7 @@ static char* cached_resolve_package_for_path(const char* path) {
 
 #ifdef __EMSCRIPTEN__
 /* WASM: stub — no ldd/readelf in browser environment */
-static ldd_entry_t* collect_ldd_entries(const char* binary_path, size_t* out_count) {
+static ldd_entry_t* __attribute__((unused)) collect_ldd_entries(const char* binary_path, size_t* out_count) {
     (void)binary_path;
     if (out_count) *out_count = 0;
     return NULL;

@@ -56,7 +56,11 @@ bool config_file_detector_find_file(const char* path, char** resolved_path) {
     memset(&glob_result, 0, sizeof(glob_result));
 
     // Expand glob pattern
+#ifdef GLOB_BRACE
     int ret = glob(path, GLOB_TILDE | GLOB_BRACE, NULL, &glob_result);
+#else
+    int ret = glob(path, GLOB_TILDE, NULL, &glob_result);
+#endif
 
     if (ret == 0 && glob_result.gl_pathc > 0) {
         // Check each match for readability

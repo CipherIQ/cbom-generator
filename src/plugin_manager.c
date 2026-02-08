@@ -35,10 +35,12 @@
 #include <errno.h>
 #include <stdio.h>
 #include <time.h>
+#ifndef __EMSCRIPTEN__
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
+#endif
 
 // Internal helper functions
 static int plugin_load_library(plugin_instance_t* instance, const char* plugin_path);
