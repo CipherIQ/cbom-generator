@@ -42,13 +42,17 @@
 #include <openssl/sha.h>
 #endif
 
-// Internal helper functions
+#ifndef __EMSCRIPTEN__
+// Internal helper functions (native only — use dlopen/dlsym)
 static int plugin_load_library(plugin_instance_t* instance, const char* plugin_path);
 static int plugin_verify_interface(const plugin_interface_t* interface);
+#endif
 
+#ifndef __EMSCRIPTEN__
 static int plugin_calculate_hash(const char* file_path, uint8_t* hash);
-static int plugin_verify_signature_internal(const char* plugin_path, 
+static int plugin_verify_signature_internal(const char* plugin_path,
                                            const char* public_key_path);
+#endif
 
 uint32_t plugin_generate_instance_id(plugin_manager_t* manager) {
     (void)manager; // Suppress unused parameter warning
@@ -317,15 +321,7 @@ int plugin_manager_load_plugin(plugin_manager_t* manager, const char* plugin_pat
 
 #endif /* __EMSCRIPTEN__ */
 
-#ifdef __EMSCRIPTEN__
-
-/* WASM: no dlopen/dlsym — binary plugins not supported */
-static int plugin_load_library(plugin_instance_t* instance, const char* plugin_path) {
-    (void)instance; (void)plugin_path;
-    return PLUGIN_ERROR_LOAD_FAILED;
-}
-
-#else /* native Linux */
+#ifndef __EMSCRIPTEN__
 
 static int plugin_load_library(plugin_instance_t* instance, const char* plugin_path) {
     // Load with RTLD_LOCAL|RTLD_NOW for symbol isolation and immediate binding
@@ -371,6 +367,7 @@ static int plugin_load_library(plugin_instance_t* instance, const char* plugin_p
 
 #endif /* __EMSCRIPTEN__ */
 
+#ifndef __EMSCRIPTEN__
 static int plugin_verify_interface(const plugin_interface_t* interface) {
     if (!interface) {
         return PLUGIN_ERROR_INVALID_PARAM;
@@ -385,19 +382,27 @@ static int plugin_verify_interface(const plugin_interface_t* interface) {
     // API version is checked separately
     return PLUGIN_SUCCESS;
 }
+#endif /* !__EMSCRIPTEN__ — plugin_load_library + plugin_verify_interface */
 
+#ifdef __EMSCRIPTEN__
+// WASM: No OpenSSL — signature verification not supported
+int plugin_verify_signature(const char* plugin_path, const plugin_trust_config_t* trust_config) {
+    (void)plugin_path; (void)trust_config;
+    return PLUGIN_ERROR_SIGNATURE_INVALID;
+}
+#else
 int plugin_verify_signature(const char* plugin_path, const plugin_trust_config_t* trust_config) {
     if (!plugin_path || !trust_config) {
         return PLUGIN_ERROR_INVALID_PARAM;
     }
-    
+
     // Check if plugin file exists
     struct stat st;
     if (stat(plugin_path, &st) != 0) {
         printf("ERROR: Plugin file not found: %s\n", plugin_path);
         return PLUGIN_ERROR_NOT_FOUND;
     }
-    
+
     // Try production keys first
     if (trust_config->production_keys_path) {
         int result = plugin_verify_signature_internal(plugin_path, trust_config->production_keys_path);
@@ -405,7 +410,7 @@ int plugin_verify_signature(const char* plugin_path, const plugin_trust_config_t
             return PLUGIN_SUCCESS;
         }
     }
-    
+
     // Try test keys if allowed
     if (trust_config->allow_test_keys && trust_config->test_keys_path) {
         int result = plugin_verify_signature_internal(plugin_path, trust_config->test_keys_path);
@@ -414,7 +419,7 @@ int plugin_verify_signature(const char* plugin_path, const plugin_trust_config_t
             return PLUGIN_SUCCESS;
         }
     }
-    
+
     printf("ERROR: Plugin signature verification failed: %s\n", plugin_path);
     return PLUGIN_ERROR_SIGNATURE_INVALID;
 }
@@ -422,24 +427,24 @@ int plugin_verify_signature(const char* plugin_path, const plugin_trust_config_t
 static int plugin_verify_signature_internal(const char* plugin_path, const char* public_key_path) {
     // This is a simplified signature verification implementation
     // In production, this would use proper cryptographic signature verification
-    
+
     // For now, just check if the public key file exists
     struct stat st;
     if (stat(public_key_path, &st) != 0) {
         return PLUGIN_ERROR_SIGNATURE_INVALID;
     }
-    
+
     // Calculate plugin hash
     uint8_t plugin_hash[PLUGIN_HASH_SIZE];
     if (plugin_calculate_hash(plugin_path, plugin_hash) != PLUGIN_SUCCESS) {
         return PLUGIN_ERROR_SIGNATURE_INVALID;
     }
-    
+
     // In a real implementation, this would:
     // 1. Load the public key
     // 2. Load the signature file (plugin_path + ".sig")
     // 3. Verify the signature against the plugin hash
-    
+
     printf("DEBUG: Plugin signature verification placeholder for: %s\n", plugin_path);
     return PLUGIN_SUCCESS;
 }
@@ -449,22 +454,22 @@ static int plugin_calculate_hash(const char* file_path, uint8_t* hash) {
     if (!file) {
         return PLUGIN_ERROR_NOT_FOUND;
     }
-    
+
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
     if (!ctx) {
         fclose(file);
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
         EVP_MD_CTX_free(ctx);
         fclose(file);
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     uint8_t buffer[4096];
     size_t bytes_read;
-    
+
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
         if (EVP_DigestUpdate(ctx, buffer, bytes_read) != 1) {
             EVP_MD_CTX_free(ctx);
@@ -472,19 +477,20 @@ static int plugin_calculate_hash(const char* file_path, uint8_t* hash) {
             return PLUGIN_ERROR_LOAD_FAILED;
         }
     }
-    
+
     unsigned int hash_len;
     if (EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
         EVP_MD_CTX_free(ctx);
         fclose(file);
         return PLUGIN_ERROR_LOAD_FAILED;
     }
-    
+
     EVP_MD_CTX_free(ctx);
     fclose(file);
-    
+
     return PLUGIN_SUCCESS;
 }
+#endif /* !__EMSCRIPTEN__ */
 
 bool plugin_check_capabilities(const plugin_metadata_t* metadata) {
     if (!metadata || !metadata->required_capabilities) {

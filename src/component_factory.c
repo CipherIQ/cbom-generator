@@ -56,6 +56,17 @@ extern int decompose_cipher_suite_to_algorithms(struct asset_store* store,
                                                 const char* enc,
                                                 const char* mac);
 
+#ifdef __EMSCRIPTEN__
+// WASM: No OpenSSL X509 — cert metadata loaded via jsbridge parser instead
+static cert_metadata_t* load_certificate_metadata(const char* cert_path) {
+    (void)cert_path;
+    return NULL;
+}
+static struct json_object* create_cert_json_metadata_obj(const char* cert_path) {
+    (void)cert_path;
+    return NULL;
+}
+#else
 // Helper: Load certificate metadata from file
 static cert_metadata_t* load_certificate_metadata(const char* cert_path) {
     cert_format_t format = cert_detect_format(cert_path);
@@ -96,6 +107,7 @@ static struct json_object* create_cert_json_metadata_obj(const char* cert_path) 
 
     return json_obj;
 }
+#endif /* !__EMSCRIPTEN__ */
 
 // Helper: Create metadata JSON for service component
 static char* create_service_metadata_json(service_instance_t* service) {
@@ -198,7 +210,8 @@ static char* create_protocol_metadata_json(const char* protocol_name, const char
     return result;
 }
 
-// Helper: Convert key_type_t to algorithm string
+#ifndef __EMSCRIPTEN__
+// Helper: Convert key_type_t to algorithm string (used by native EVP_PKEY parsing)
 static const char* key_type_to_algo_string(key_type_t type) {
     switch (type) {
         case KEY_TYPE_RSA: return "RSA";
@@ -210,6 +223,7 @@ static const char* key_type_to_algo_string(key_type_t type) {
         default: return "Unknown";
     }
 }
+#endif /* !__EMSCRIPTEN__ */
 
 // Helper: Create metadata JSON for key component
 static char* create_key_metadata_json(const char* key_path, const char* algorithm, int key_size) {
@@ -336,6 +350,35 @@ crypto_asset_t* component_factory_create_certificate(
     return asset;
 }
 
+#ifdef __EMSCRIPTEN__
+// WASM: No OpenSSL EVP_PKEY — create basic key asset without parsing
+crypto_asset_t* component_factory_create_private_key(
+    const char* key_path,
+    const char* cert_id,
+    asset_store_t* store
+) {
+    (void)cert_id;
+
+    if (!key_path || !store) {
+        return NULL;
+    }
+
+    crypto_asset_t* asset = malloc(sizeof(crypto_asset_t));
+    if (!asset) {
+        return NULL;
+    }
+
+    memset(asset, 0, sizeof(crypto_asset_t));
+
+    asset->type = ASSET_TYPE_KEY;
+    asset->location = strdup(key_path);
+    asset->name = strdup(key_path);
+    asset->metadata_json = create_key_metadata_json(key_path, NULL, 0);
+    asset->id = generate_asset_id(asset);
+
+    return asset;
+}
+#else
 crypto_asset_t* component_factory_create_private_key(
     const char* key_path,
     const char* cert_id,
@@ -390,6 +433,7 @@ crypto_asset_t* component_factory_create_private_key(
 
     return asset;
 }
+#endif /* !__EMSCRIPTEN__ */
 
 crypto_asset_t* component_factory_create_protocol(
     const char* protocol_name,

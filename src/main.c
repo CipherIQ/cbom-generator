@@ -517,8 +517,13 @@ static int initialize_subsystems(void) {
     
     // Set default thread count to CPU count
     if (g_cbom_config.thread_count == 0) {
+#ifdef __EMSCRIPTEN__
+        // WASM: single-threaded (no pthreads, sequential scanner execution)
+        g_cbom_config.thread_count = 1;
+#else
         long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
         g_cbom_config.thread_count = (cpu_count > 0) ? (int)cpu_count : 4;
+#endif
     }
     
     // Initialize crypto parser backend
@@ -7235,8 +7240,15 @@ static int run_walking_skeleton(void) {
     first_path = g_cbom_config.target_path_count > 0 ? g_cbom_config.target_paths[0] : ".";
 
     // Find all scanner plugins
+#ifdef __EMSCRIPTEN__
+    // WASM: builtin cert/key scanners are stubbed (no OpenSSL) — use basic
+    // scanners in main.c which route through the jsbridge crypto parser
+    plugin_instance_t* cert_scanner = NULL;
+    plugin_instance_t* key_scanner = NULL;
+#else
     plugin_instance_t* cert_scanner = plugin_manager_find_plugin(plugin_manager, "builtin_cert_scanner");
     plugin_instance_t* key_scanner = plugin_manager_find_plugin(plugin_manager, "builtin_key_scanner");
+#endif
     plugin_instance_t* package_scanner = plugin_manager_find_plugin(plugin_manager, "builtin_package_scanner");
     plugin_instance_t* service_scanner = plugin_manager_find_plugin(plugin_manager, "builtin_service_scanner");
     plugin_instance_t* fs_scanner = plugin_manager_find_plugin(plugin_manager, "builtin_fs_scanner");

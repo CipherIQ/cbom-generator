@@ -313,7 +313,7 @@ describe('WasmScanner — scan path detection', () => {
         assert.equal(cbom.bomFormat, 'CycloneDX');
     });
 
-    it('detects rootfs structure inside a single top-level directory', async () => {
+    it('strips archive prefix and mounts rootfs files directly under /scan', async () => {
         scanner.reset();
 
         // Simulate an archive with a rootfs/ prefix (common for rootfs tarballs)
@@ -326,13 +326,20 @@ describe('WasmScanner — scan path detection', () => {
         const certData = { certs: [], keys: [], warnings: [] };
         await scanner.scan(files, certData);
 
-        // The scan should have detected /scan/rootfs/usr/bin, /scan/rootfs/usr/lib, /scan/rootfs/etc
+        // rootfs/ prefix should be stripped: files at /scan/usr/bin, not /scan/rootfs/usr/bin
         const mod = scanner.getModule();
         const usrBinExists = (() => {
-            try { return mod.FS.isDir(mod.FS.stat('/scan/rootfs/usr/bin').mode); }
+            try { return mod.FS.isDir(mod.FS.stat('/scan/usr/bin').mode); }
             catch { return false; }
         })();
-        assert(usrBinExists, '/scan/rootfs/usr/bin should exist in MEMFS');
+        assert(usrBinExists, '/scan/usr/bin should exist in MEMFS (rootfs/ prefix stripped)');
+
+        // rootfs/ directory should NOT exist
+        const rootfsExists = (() => {
+            try { return mod.FS.isDir(mod.FS.stat('/scan/rootfs').mode); }
+            catch { return false; }
+        })();
+        assert(!rootfsExists, '/scan/rootfs should NOT exist (prefix was stripped)');
     });
 
     it('uses explicit scanPaths when provided', async () => {

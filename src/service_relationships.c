@@ -26,6 +26,22 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
+#else
+// WASM: Provide SHA256 replacement for canonical algorithm ID generation
+#define SHA256_DIGEST_LENGTH 32
+static inline void wasm_hash_bytes(const unsigned char* data, size_t len,
+                                   unsigned char* out) {
+    // FNV-1a variant, iterated to produce 32 bytes (for dedup IDs only)
+    for (int round = 0; round < 32; round++) {
+        uint32_t h = 0x811c9dc5 ^ (uint32_t)round;
+        for (size_t i = 0; i < len; i++) {
+            h ^= data[i];
+            h *= 0x01000193;
+        }
+        out[round] = (unsigned char)(h & 0xff);
+    }
+}
+#define SHA256(data, len, out) wasm_hash_bytes((data), (len), (out))
 #endif
 #include <json-c/json.h>
 
@@ -128,12 +144,13 @@ int build_service_cert_relationships(asset_store_t* store) {
     crypto_asset_t** assets = asset_store_get_sorted(store, NULL, &count);
     if (!assets) return 0;
 
-    // Debug: Show asset store stats
+    // Count asset types for debug context
     int service_count = 0, cert_count = 0;
     for (size_t i = 0; i < count; i++) {
         if (assets[i]->type == ASSET_TYPE_SERVICE) service_count++;
         if (assets[i]->type == ASSET_TYPE_CERTIFICATE) cert_count++;
     }
+    (void)service_count; (void)cert_count;
 
     // Find all service assets and create cert relationships
     for (size_t i = 0; i < count; i++) {
@@ -172,6 +189,29 @@ int build_service_cert_relationships(asset_store_t* store) {
     return relationships_created;
 }
 
+#ifdef __EMSCRIPTEN__
+// WASM: Simplified cert lookup — path matching only (no OpenSSL for DN matching)
+const char* find_cert_id_by_path(asset_store_t* store, const char* cert_path) {
+    if (!store || !cert_path) return NULL;
+
+    size_t count;
+    crypto_asset_t** assets = asset_store_get_sorted(store, NULL, &count);
+    if (!assets) return NULL;
+
+    const char* result = NULL;
+    for (size_t i = 0; i < count; i++) {
+        if (assets[i]->type == ASSET_TYPE_CERTIFICATE && assets[i]->location) {
+            if (strcmp(assets[i]->location, cert_path) == 0) {
+                result = assets[i]->id;
+                break;
+            }
+        }
+    }
+
+    free(assets);
+    return result;
+}
+#else
 // Helper: Find certificate asset by file path
 const char* find_cert_id_by_path(asset_store_t* store, const char* cert_path) {
     if (!store || !cert_path) return NULL;
@@ -259,6 +299,7 @@ const char* find_cert_id_by_path(asset_store_t* store, const char* cert_path) {
     free(assets);
     return result;
 }
+#endif /* !__EMSCRIPTEN__ */
 
 // Helper: Create algorithm asset from name and key size
 crypto_asset_t* create_algorithm_asset_from_components(const char* algorithm_name, int key_size) {

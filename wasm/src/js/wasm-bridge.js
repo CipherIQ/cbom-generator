@@ -160,24 +160,8 @@ class WasmScanner {
         }
 
         // Mode 2: Detect rootfs structure in MEMFS
-        // Check /scan/ directly first, then check inside a single top-level
-        // directory (common in rootfs archives: rootfs/, firmware/, etc.)
-        const prefixes = ['/scan'];
-
-        try {
-            // Filter out dotfiles (e.g. .cert-metadata.json) — they're internal,
-            // not part of the archive structure.
-            const topLevel = FS.readdir('/scan').filter(e => e !== '.' && e !== '..' && !e.startsWith('.'));
-            if (topLevel.length === 1) {
-                try {
-                    const st = FS.stat(`/scan/${topLevel[0]}`);
-                    if (FS.isDir(st.mode)) {
-                        prefixes.push(`/scan/${topLevel[0]}`);
-                    }
-                } catch { /* ignore */ }
-            }
-        } catch { /* ignore */ }
-
+        // Archive prefix (rootfs/, firmware/, etc.) is stripped at mount time,
+        // so files are already at /scan/usr/bin/... not /scan/rootfs/usr/bin/...
         const rootfsSuffixes = [
             '/usr/bin',
             '/usr/sbin',
@@ -189,25 +173,71 @@ class WasmScanner {
             '/lib',
         ];
 
-        for (const prefix of prefixes) {
-            const detected = rootfsSuffixes
-                .map(suffix => prefix + suffix)
-                .filter(p => {
-                    try {
-                        const st = FS.stat(p);
-                        return FS.isDir(st.mode);
-                    } catch {
-                        return false;
-                    }
-                });
+        const detected = rootfsSuffixes
+            .map(suffix => '/scan' + suffix)
+            .filter(p => {
+                try {
+                    const st = FS.stat(p);
+                    return FS.isDir(st.mode);
+                } catch {
+                    return false;
+                }
+            });
 
-            if (detected.length > 0) {
-                return detected;
-            }
+        if (detected.length > 0) {
+            return detected;
         }
 
         // Mode 3: Fallback — scan entire archive
         return ['/scan'];
+    }
+
+    /**
+     * Detect common non-system top-level directory in archive paths.
+     *
+     * Archives often wrap all files under a single directory like rootfs/,
+     * firmware/, or image/. This prefix should be stripped during mounting
+     * so /scan/ directly contains usr/, etc/, lib/, etc.
+     *
+     * Only strips if the archive has rootfs-like structure under the prefix
+     * (i.e. contains usr/, etc/, or lib/ subdirectories).
+     *
+     * @param {Map<string, Uint8Array>} files
+     * @returns {string|null} prefix to strip (e.g. 'rootfs/') or null
+     */
+    _detectArchivePrefix(files) {
+        if (files.size === 0) return null;
+
+        const systemDirs = new Set([
+            'usr', 'etc', 'lib', 'lib64', 'bin', 'sbin',
+            'var', 'opt', 'home', 'root', 'tmp', 'dev',
+            'proc', 'sys', 'run', 'srv', 'mnt', 'media',
+        ]);
+
+        let commonFirst = null;
+        for (const path of files.keys()) {
+            const firstSeg = path.split('/')[0];
+            if (commonFirst === null) {
+                commonFirst = firstSeg;
+            } else if (firstSeg !== commonFirst) {
+                return null; // not all files share the same first segment
+            }
+        }
+
+        // If the common first segment is a system dir, don't strip it
+        if (!commonFirst || systemDirs.has(commonFirst)) {
+            return null;
+        }
+
+        // Only strip if the archive contains rootfs-like structure under the prefix
+        // (e.g., rootfs/usr/bin/..., rootfs/etc/...) to avoid false positives
+        const prefix = commonFirst + '/';
+        const rootfsMarkers = ['usr/', 'etc/', 'lib/'];
+        const hasRootfs = rootfsMarkers.some(marker =>
+            Array.from(files.keys()).some(p => p.startsWith(prefix + marker))
+        );
+
+        return hasRootfs ? prefix : null;
     }
 
     // ── Main scan method ─────────────────────────────────────────────
@@ -254,9 +284,15 @@ class WasmScanner {
         mkdirp(FS, '/output');
 
         // ── 3. Mount extracted files ──
+        // Strip common non-system prefix (e.g. rootfs/, firmware/) so that
+        // /scan/ directly contains usr/, etc/, lib/ — matching the paths
+        // that YAML plugins expect (e.g. /etc/ssh/sshd_config → /scan/etc/ssh/sshd_config).
+        const archivePrefix = this._detectArchivePrefix(files);
         let mounted = 0;
         for (const [path, data] of files) {
-            const fullPath = '/scan/' + path;
+            const mountPath = archivePrefix && path.startsWith(archivePrefix)
+                ? path.slice(archivePrefix.length) : path;
+            const fullPath = '/scan/' + mountPath;
             mkdirp(FS, parentDir(fullPath));
             FS.writeFile(fullPath, data);
             mounted++;
@@ -276,8 +312,28 @@ class WasmScanner {
         this._mountRegistry(FS, registry);
 
         // ── 5. Write cert metadata JSON ──
+        // Strip the archive prefix from filePaths so the C-side jsbridge parser
+        // builds lookup keys matching the actual MEMFS paths.
+        // e.g. "rootfs/etc/ssl/certs/ca.pem" → "etc/ssl/certs/ca.pem"
+        //   → jsbridge builds key "/scan/etc/ssl/certs/ca.pem" (matches MEMFS)
         if (certData) {
-            const metadataJson = JSON.stringify(certData);
+            let adjusted = certData;
+            if (archivePrefix) {
+                adjusted = {
+                    ...certData,
+                    certs: (certData.certs || []).map(c =>
+                        c.filePath && c.filePath.startsWith(archivePrefix)
+                            ? { ...c, filePath: c.filePath.slice(archivePrefix.length) }
+                            : c
+                    ),
+                    keys: (certData.keys || []).map(k =>
+                        k.filePath && k.filePath.startsWith(archivePrefix)
+                            ? { ...k, filePath: k.filePath.slice(archivePrefix.length) }
+                            : k
+                    ),
+                };
+            }
+            const metadataJson = JSON.stringify(adjusted);
             FS.writeFile('/scan/.cert-metadata.json', metadataJson);
         }
 
@@ -289,6 +345,10 @@ class WasmScanner {
         // in WASM.
         const argv = [];
         argv.push('--cross-arch');
+
+        // Rootfs prefix — tells the C-side that absolute paths in YAML plugins
+        // (e.g. /etc/ssh/sshd_config) should be searched at /scan/etc/ssh/sshd_config.
+        argv.push('--rootfs-prefix', '/scan');
 
         // Config-only service discovery (default: on).
         // This enables YAML plugins to parse config files (nginx.conf, sshd_config,

@@ -257,18 +257,17 @@ if(EMSCRIPTEN)
     list(REMOVE_ITEM SOURCES src/crypto_parser_openssl.c)
     list(APPEND SOURCES src/crypto_parser_jsbridge.c src/crypto_parser_stub.c)
 
-    # Remove source files that depend heavily on OpenSSL / Linux APIs
+    # Remove source files that depend heavily on OpenSSL / Linux APIs.
+    # plugin_manager.c, component_factory.c, service_relationships.c are
+    # kept — they have #ifdef __EMSCRIPTEN__ guards around OpenSSL code.
     list(REMOVE_ITEM SOURCES
         src/attestation.c
-        src/service_relationships.c
         src/detection/port_detector.c
         src/parsers/openssl_cipher_parser.c
         src/parsers/json_parser.c
-        src/plugin_manager.c
         src/key_manager.c
         src/privacy.c
         src/dedup.c
-        src/component_factory.c
     )
     # Add WASM stubs for the removed modules
     list(APPEND SOURCES src/wasm_stubs.c)
