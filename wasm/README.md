@@ -6,9 +6,21 @@ service configurations entirely in the browser — no server-side processing.
 
 ## Prerequisites
 
-- [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) 3.1.50+
 - Node.js 18+
 - CMake 3.16+
+- [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) 3.1.50+
+
+### Installing the Emscripten SDK
+
+If you don't have emsdk installed, clone and set it up as a sibling directory:
+
+```bash
+cd ..                          # parent of cbom-generator
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
+```
 
 ## Building
 
@@ -20,7 +32,16 @@ All commands run from the `wasm/` directory.
 npm install
 ```
 
-### 2. Build C dependencies for Emscripten
+### 2. Activate Emscripten
+
+Source the emsdk environment before any build step that uses Emscripten.
+This must be done once per shell session:
+
+```bash
+source ../emsdk/emsdk_env.sh
+```
+
+### 3. Build C dependencies for Emscripten
 
 Compiles json-c, libyaml, and jansson as static WASM libraries:
 
@@ -28,17 +49,16 @@ Compiles json-c, libyaml, and jansson as static WASM libraries:
 npm run build:deps
 ```
 
-### 3. Activate Emscripten and build the WASM module
+### 4. Build the WASM module
 
 ```bash
-source ../emsdk/emsdk_env.sh   # adjust path to your emsdk install
 npm run build:wasm
 ```
 
 This produces `build-wasm/cbom-generator.js` (Emscripten glue) and
 `build-wasm/cbom-generator.wasm` in the repository root.
 
-### 4. Bundle the scanner web UI
+### 5. Bundle the scanner web UI
 
 ```bash
 npm run build:js              # readable output (912 KB)
