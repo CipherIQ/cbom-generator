@@ -5,7 +5,7 @@
   "scripts": {
     "build:deps": "./scripts/build-wasm-deps.sh",
     "build:wasm": "cd .. && emcmake cmake -B build-wasm -DCBOM_WASM=ON && emmake cmake --build build-wasm",
-    "build:js": "echo 'TODO: bundle JS modules'",
+    "build:js": "node scripts/build-web.mjs",
     "test": "node --test tests/unit/",
     "test:archive": "node --test ../tests/js/archive.test.mjs",
     "test:certs": "node --test ../tests/js/cert-parser.test.mjs",
@@ -14,9 +14,11 @@
     "package": "node scripts/package-wasm.js"
   },
   "devDependencies": {
+    "esbuild": "^0.24.0",
     "fflate": "^0.8.0",
     "pkijs": "^3.0.0",
     "asn1js": "^3.0.0",
+    "@noble/hashes": "^1.6.0",
     "pvutils": "^1.1.0"
   }
 }
