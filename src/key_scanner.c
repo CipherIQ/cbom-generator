@@ -1856,16 +1856,20 @@ bool key_scanner_validate_no_pem_headers_in_output(const char* output) {
     return true; // PASS: No PEM headers found
 }
 
-#else /* __EMSCRIPTEN__ — WASM stubs for key scanner */
+#else /* __EMSCRIPTEN__ — WASM key scanner via JS bridge (pkijs) */
 
 /*
- * WASM build: key parsing requires OpenSSL which is not available.
- * These stubs provide the public API so builtin_scanners.c links correctly.
- * All scanning functions return 0 (no keys found).
- * Phase 2 will replace these with a JS bridge to pkijs.
+ * WASM build: key parsing uses the JavaScript bridge (pkijs) instead of
+ * OpenSSL.  The JS layer pre-parses keys and writes metadata to a JSON
+ * file that crypto_parser_jsbridge.c reads into g_key_lookup.
+ *
+ * key_scanner_scan_paths() iterates g_key_lookup via jsbridge_iterate_keys(),
+ * creates crypto_asset_t objects, and registers them in the asset store.
  */
 
-static __thread char last_error[256] = "Key parsing not available in WASM";
+#include "crypto_parser_interface.h"
+
+static __thread char last_error[256] = "";
 
 __attribute__((unused))
 static void set_error(const char* fmt, ...) {
@@ -1939,9 +1943,108 @@ int key_scanner_scan_directory(key_scanner_context_t* context, const char* dir_p
     return 0;
 }
 
+/* Callback data for jsbridge key iteration */
+struct wasm_key_scan_data {
+    key_scanner_context_t* context;
+    int keys_found;
+};
+
+static void wasm_key_scan_callback(const char* path, void* user_data) {
+    struct wasm_key_scan_data* data = user_data;
+    key_scanner_context_t* ctx = data->context;
+
+    const crypto_parser_ops_t* ops = crypto_parser_get_ops();
+    if (!ops || !ops->parse_key) return;
+
+    crypto_parsed_key_t parsed;
+    if (ops->parse_key(NULL, 0, path, NULL, &parsed) != 0) return;
+
+    /* Build asset name: "key:<algorithm>" */
+    char asset_name[256];
+    snprintf(asset_name, sizeof(asset_name), "key:%s",
+             parsed.algorithm ? parsed.algorithm : "unknown");
+
+    crypto_asset_t* asset = crypto_asset_create(asset_name, ASSET_TYPE_KEY);
+    if (!asset) {
+        ops->free_key(&parsed);
+        return;
+    }
+
+    asset->location = strdup(path);
+    asset->algorithm = parsed.algorithm ? strdup(parsed.algorithm) : strdup("Unknown");
+    asset->key_size = (uint32_t)parsed.key_size;
+
+    /* Weak key detection: RSA < 2048 bits */
+    if (parsed.key_size > 0 && parsed.key_size < 2048 &&
+        parsed.algorithm && strcasecmp(parsed.algorithm, "RSA") == 0) {
+        asset->is_weak = true;
+    }
+
+    /* Build metadata JSON */
+    json_object* metadata = json_object_new_object();
+    if (parsed.algorithm)
+        json_object_object_add(metadata, "algorithm",
+                               json_object_new_string(parsed.algorithm));
+    json_object_object_add(metadata, "keySize",
+                           json_object_new_int(parsed.key_size));
+    if (parsed.curve_name && parsed.curve_name[0])
+        json_object_object_add(metadata, "curveName",
+                               json_object_new_string(parsed.curve_name));
+    json_object_object_add(metadata, "isPrivate",
+                           json_object_new_boolean(parsed.is_private));
+    json_object_object_add(metadata, "isEncrypted",
+                           json_object_new_boolean(parsed.is_encrypted));
+    json_object_object_add(metadata, "classification",
+                           json_object_new_string("private"));
+    json_object_object_add(metadata, "storage_security",
+                           json_object_new_string("plaintext"));
+    json_object_object_add(metadata, "state",
+                           json_object_new_string("active"));
+
+    asset->metadata_json = strdup(json_object_to_json_string(metadata));
+    json_object_put(metadata);
+
+    ops->free_key(&parsed);
+
+    /* Register in asset store */
+    if (ctx->asset_store) {
+        if (asset_store_add(ctx->asset_store, asset) == 0) {
+            data->keys_found++;
+
+            /* Update statistics */
+            pthread_mutex_lock(&ctx->mutex);
+            ctx->stats.keys_detected_total++;
+            ctx->stats.keys_parsed_ok++;
+            ctx->stats.files_with_keys++;
+            ctx->stats.private_keys_found++;
+            ctx->stats.plaintext_keys++;
+
+            if (asset->algorithm) {
+                if (strcasecmp(asset->algorithm, "RSA") == 0)
+                    ctx->stats.rsa_keys++;
+                else if (strcasecmp(asset->algorithm, "EC") == 0 ||
+                         strcasecmp(asset->algorithm, "ECDSA") == 0)
+                    ctx->stats.ecdsa_keys++;
+                else if (strcasecmp(asset->algorithm, "Ed25519") == 0)
+                    ctx->stats.ed25519_keys++;
+                else if (strcasecmp(asset->algorithm, "DSA") == 0)
+                    ctx->stats.dsa_keys++;
+            }
+            pthread_mutex_unlock(&ctx->mutex);
+        } else {
+            crypto_asset_destroy(asset);
+        }
+    } else {
+        crypto_asset_destroy(asset);
+    }
+}
+
 int key_scanner_scan_paths(key_scanner_context_t* context) {
-    (void)context;
-    return 0;
+    if (!context) return -1;
+
+    struct wasm_key_scan_data data = { .context = context, .keys_found = 0 };
+    jsbridge_iterate_keys(wasm_key_scan_callback, &data);
+    return data.keys_found;
 }
 
 key_scanner_stats_t key_scanner_get_stats(const key_scanner_context_t* context) {
@@ -2028,13 +2131,96 @@ void secured_by_destroy(secured_by_t* secured_by) {
 }
 
 struct crypto_asset* key_create_asset(const key_metadata_t* metadata) {
-    (void)metadata;
-    return NULL;
+    if (!metadata) return NULL;
+
+    char asset_name[256];
+    snprintf(asset_name, sizeof(asset_name), "%s Key",
+             metadata->algorithm ? metadata->algorithm : "Unknown");
+
+    crypto_asset_t* asset = crypto_asset_create(asset_name, ASSET_TYPE_KEY);
+    if (!asset) return NULL;
+
+    if (metadata->key_id_sha256) {
+        free(asset->id);
+        asset->id = strdup(metadata->key_id_sha256);
+    }
+    if (metadata->file_path)
+        asset->location = strdup(metadata->file_path);
+    if (metadata->algorithm) {
+        free(asset->algorithm);
+        asset->algorithm = strdup(metadata->algorithm);
+    }
+
+    asset->is_weak = metadata->is_weak;
+    asset->is_pqc_ready = false;
+    asset->metadata_json = key_create_detailed_json_metadata(metadata);
+
+    return asset;
 }
 
 char* key_create_detailed_json_metadata(const key_metadata_t* metadata) {
-    (void)metadata;
-    return NULL;
+    if (!metadata) return NULL;
+
+    json_object* root = json_object_new_object();
+    if (!root) return NULL;
+
+    /* Key type */
+    const char* type_str = "unknown";
+    switch (metadata->type) {
+        case KEY_TYPE_RSA: type_str = "RSA"; break;
+        case KEY_TYPE_ECDSA: type_str = "ECDSA"; break;
+        case KEY_TYPE_ED25519: type_str = "Ed25519"; break;
+        case KEY_TYPE_ED448: type_str = "Ed448"; break;
+        case KEY_TYPE_DSA: type_str = "DSA"; break;
+        case KEY_TYPE_DH: type_str = "DH"; break;
+        default: break;
+    }
+    json_object_object_add(root, "key_type", json_object_new_string(type_str));
+
+    /* Classification */
+    const char* class_str = "unknown";
+    switch (metadata->classification) {
+        case KEY_CLASS_PRIVATE: class_str = "private"; break;
+        case KEY_CLASS_PUBLIC: class_str = "public"; break;
+        case KEY_CLASS_SYMMETRIC: class_str = "symmetric"; break;
+        case KEY_CLASS_PAIR: class_str = "pair"; break;
+        default: break;
+    }
+    json_object_object_add(root, "classification", json_object_new_string(class_str));
+
+    json_object_object_add(root, "key_size", json_object_new_int(metadata->key_size));
+    if (metadata->algorithm)
+        json_object_object_add(root, "algorithm",
+                               json_object_new_string(metadata->algorithm));
+    if (metadata->curve_name)
+        json_object_object_add(root, "curve_name",
+                               json_object_new_string(metadata->curve_name));
+
+    /* State */
+    const char* state_str = key_state_to_string(metadata->state);
+    json_object_object_add(root, "state", json_object_new_string(state_str));
+
+    /* OID */
+    if (metadata->oid)
+        json_object_object_add(root, "oid", json_object_new_string(metadata->oid));
+
+    /* Format */
+    const char* format_str = "unknown";
+    switch (metadata->format) {
+        case KEY_FORMAT_PEM: format_str = "PEM"; break;
+        case KEY_FORMAT_DER: format_str = "DER"; break;
+        case KEY_FORMAT_OPENSSH: format_str = "OpenSSH"; break;
+        case KEY_FORMAT_PKCS8: format_str = "PKCS#8"; break;
+        default: break;
+    }
+    json_object_object_add(root, "format", json_object_new_string(format_str));
+
+    json_object_object_add(root, "is_weak", json_object_new_boolean(metadata->is_weak));
+
+    const char* json_str = json_object_to_json_string_ext(root, JSON_C_TO_STRING_PLAIN);
+    char* result = json_str ? strdup(json_str) : NULL;
+    json_object_put(root);
+    return result;
 }
 
 void key_metadata_destroy(key_metadata_t* metadata) {

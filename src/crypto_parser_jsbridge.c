@@ -433,6 +433,25 @@ static void jsbridge_free_key(crypto_parsed_key_t* key) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Key iteration (for WASM key scanner)                               */
+/* ------------------------------------------------------------------ */
+
+int jsbridge_iterate_keys(
+    void (*callback)(const char* path, void* user_data),
+    void* user_data) {
+
+    if (!g_key_lookup || !callback) return 0;
+
+    int count = 0;
+    json_object_object_foreach(g_key_lookup, key, val) {
+        (void)val;
+        callback(key, user_data);
+        count++;
+    }
+    return count;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Ops struct and accessor                                            */
 /* ------------------------------------------------------------------ */
 

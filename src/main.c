@@ -1050,17 +1050,22 @@ static int scan_directory_for_keys(const char *dirpath, asset_store_t *store) {
 
         if (!S_ISREG(st.st_mode)) continue;
 
-        // Check for key file extensions
+        // Check for key file candidates: extension-based or name-based
         size_t len = strlen(name);
-        bool is_key_ext = false;
+        bool is_key_candidate = false;
         if (len > 4) {
             const char *ext = name + len - 4;
             if (strcasecmp(ext, ".key") == 0 ||
                 strcasecmp(ext, ".pem") == 0) {
-                is_key_ext = true;
+                is_key_candidate = true;
             }
         }
-        if (!is_key_ext) continue;
+        // SSH host keys: ssh_host_*_key (no extension)
+        if (!is_key_candidate && strstr(name, "_key") != NULL &&
+            strstr(name, ".pub") == NULL) {
+            is_key_candidate = true;
+        }
+        if (!is_key_candidate) continue;
 
         if (!is_pem_key_file(filepath)) continue;
 

@@ -464,6 +464,154 @@ function parseSingleKey(derBytes, filePath, format, pemType) {
         }
     }
 
+    // OpenSSH private key format (not ASN.1 — custom binary)
+    if (pemType === 'OPENSSH PRIVATE KEY') {
+        try {
+            return parseOpenSSHKey(derBytes, filePath);
+        } catch {
+            // Failed to parse OpenSSH format
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Parse an OpenSSH private key (binary format, not ASN.1).
+ *
+ * Format: "openssh-key-v1\0" magic, followed by:
+ *   string cipher, string kdf, string kdf_options, uint32 nkeys,
+ *   string[] public_keys, string encrypted_section
+ *
+ * The public key string contains the key type and parameters we need.
+ *
+ * @param {Uint8Array} data - Base64-decoded key bytes
+ * @param {string} filePath
+ * @returns {Object|null} KeyMetadata
+ */
+function parseOpenSSHKey(data, filePath) {
+    const MAGIC = 'openssh-key-v1\0';
+    const header = new TextDecoder().decode(data.subarray(0, MAGIC.length));
+    if (header !== MAGIC) return null;
+
+    let offset = MAGIC.length;
+
+    // Read a uint32 (big-endian)
+    function readUint32() {
+        if (offset + 4 > data.length) throw new Error('truncated');
+        const val = (data[offset] << 24) | (data[offset+1] << 16) |
+                    (data[offset+2] << 8) | data[offset+3];
+        offset += 4;
+        return val >>> 0;
+    }
+
+    // Read a length-prefixed string/bytes
+    function readString() {
+        const len = readUint32();
+        if (offset + len > data.length) throw new Error('truncated');
+        const val = data.subarray(offset, offset + len);
+        offset += len;
+        return val;
+    }
+
+    // Skip: cipher, kdf, kdf_options
+    readString(); // cipher
+    readString(); // kdf
+    readString(); // kdf_options
+
+    const nkeys = readUint32();
+    if (nkeys < 1) return null;
+
+    // Read first public key
+    const pubKeyBlob = readString();
+
+    // Parse public key type from the blob
+    let pkOffset = 0;
+    function readPkUint32() {
+        const val = (pubKeyBlob[pkOffset] << 24) | (pubKeyBlob[pkOffset+1] << 16) |
+                    (pubKeyBlob[pkOffset+2] << 8) | pubKeyBlob[pkOffset+3];
+        pkOffset += 4;
+        return val >>> 0;
+    }
+    function readPkString() {
+        const len = readPkUint32();
+        const val = pubKeyBlob.subarray(pkOffset, pkOffset + len);
+        pkOffset += len;
+        return val;
+    }
+
+    const keyTypeBytes = readPkString();
+    const keyType = new TextDecoder().decode(keyTypeBytes);
+
+    if (keyType === 'ssh-rsa') {
+        const e = readPkString(); // public exponent
+        const n = readPkString(); // modulus
+        let keySize = n.length * 8;
+        if (n.length > 0 && n[0] === 0) keySize -= 8;
+
+        return {
+            filePath,
+            algorithm: 'RSA',
+            algorithmOid: '1.2.840.113549.1.1.1',
+            keySize,
+            namedCurve: '',
+            format: 'OpenSSH',
+        };
+    }
+
+    if (keyType.startsWith('ecdsa-sha2-')) {
+        const curveId = new TextDecoder().decode(readPkString());
+        let keySize = 0;
+        let namedCurve = curveId;
+        switch (curveId) {
+            case 'nistp256': keySize = 256; namedCurve = 'P-256'; break;
+            case 'nistp384': keySize = 384; namedCurve = 'P-384'; break;
+            case 'nistp521': keySize = 521; namedCurve = 'P-521'; break;
+        }
+
+        return {
+            filePath,
+            algorithm: 'EC',
+            algorithmOid: '1.2.840.10045.2.1',
+            keySize,
+            namedCurve,
+            format: 'OpenSSH',
+        };
+    }
+
+    if (keyType === 'ssh-ed25519') {
+        return {
+            filePath,
+            algorithm: 'Ed25519',
+            algorithmOid: '1.3.101.112',
+            keySize: 256,
+            namedCurve: '',
+            format: 'OpenSSH',
+        };
+    }
+
+    if (keyType === 'ssh-ed448') {
+        return {
+            filePath,
+            algorithm: 'Ed448',
+            algorithmOid: '1.3.101.113',
+            keySize: 448,
+            namedCurve: '',
+            format: 'OpenSSH',
+        };
+    }
+
+    if (keyType === 'ssh-dss') {
+        return {
+            filePath,
+            algorithm: 'DSA',
+            algorithmOid: '1.2.840.10040.4.1',
+            keySize: 1024,
+            namedCurve: '',
+            format: 'OpenSSH',
+        };
+    }
+
     return null;
 }
 

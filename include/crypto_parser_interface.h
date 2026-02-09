@@ -107,4 +107,8 @@ const crypto_parser_ops_t* crypto_parser_jsbridge_ops(void);
 int  jsbridge_parser_init(const char* json_path);
 void jsbridge_parser_shutdown(void);
 
+/* JS bridge key iteration (WASM only — iterates pre-parsed key metadata) */
+int  jsbridge_iterate_keys(void (*callback)(const char* path, void* user_data),
+                           void* user_data);
+
 #endif /* CRYPTO_PARSER_INTERFACE_H */
