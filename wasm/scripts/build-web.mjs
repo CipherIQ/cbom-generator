@@ -95,10 +95,10 @@ output = output.replace(
     'var REGISTRY_BASE = "./registry"'
 );
 
-// Rewrite explorer URL for flat deployment (explorer alongside scanner)
+// Rewrite explorer URL for website deployment (explore.html alongside scanner)
 output = output.replace(
     /(?:const|var) explorerUrl = ["'][^"']*["']/,
-    'var explorerUrl = "./cbom-viz.html"'
+    'var explorerUrl = "./explore.html"'
 );
 
 // ── 5. Write output ─────────────────────────────────────────────────

@@ -29,76 +29,198 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-    --color-safe: #28a745;
-    --color-transitional: #ffc107;
-    --color-unsafe: #dc3545;
+    /* CipherIQ Brand */
+    --color-primary: #3B82B6;
+    --color-primary-dark: #2563eb;
+    --color-primary-light: #60a5fa;
+
+    /* Status Colors */
+    --color-safe: #22c55e;
+    --color-transitional: #eab308;
+    --color-unsafe: #ef4444;
     --color-deprecated: #868e96;
-    --color-primary: #667eea;
-    --color-primary-dark: #5a6fd6;
-    --color-bg: #f8f9fa;
-    --color-card: #ffffff;
-    --color-text: #212529;
-    --color-text-muted: #6c757d;
-    --color-border: #dee2e6;
+
+    /* Light Theme (default) */
+    --color-bg: #f8fafc;
+    --color-surface: #ffffff;
+    --color-surface-hover: #f1f5f9;
+    --color-text: #1e293b;
+    --color-text-muted: #64748b;
+    --color-border: #e2e8f0;
+    --color-white: #ffffff;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+
+    /* Transitions */
+    --transition-fast: 150ms ease;
+    --transition-normal: 250ms ease;
+
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --radius: 8px;
-    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-    --shadow-lg: 0 4px 12px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+    --radius: 12px;
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-bg: #1a1d23;
-        --color-card: #22252b;
-        --color-text: #e1e4e8;
-        --color-text-muted: #8b949e;
-        --color-border: #30363d;
-        --shadow: 0 1px 3px rgba(0,0,0,0.3);
-        --shadow-lg: 0 4px 12px rgba(0,0,0,0.4);
-    }
+/* Dark Theme */
+[data-theme="dark"] {
+    --color-bg: #0f172a;
+    --color-surface: #1e293b;
+    --color-surface-hover: #334155;
+    --color-text: #f1f5f9;
+    --color-text-muted: #94a3b8;
+    --color-border: #334155;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+}
+
+html {
+    transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
 body {
     font-family: var(--font);
     background: var(--color-bg);
     color: var(--color-text);
-    min-height: 100vh;
+    padding: 20px;
+    font-size: 16px;
+    line-height: 1.6;
+    transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* ── Layout ────────────────────────────────────────────────────────── */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: var(--color-surface);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+.header {
+    background: linear-gradient(135deg, #3B82B6 0%, #1e40af 100%);
+    color: #ffffff;
+    padding: 20px 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.header-logo {
+    height: 40px;
+    width: auto;
+}
+
+.header-title {
     display: flex;
     flex-direction: column;
 }
 
-/* ── Layout ────────────────────────────────────────────────────────── */
-.header {
-    background: var(--color-card);
-    border-bottom: 1px solid var(--color-border);
-    padding: 12px 24px;
+.header h1 {
+    font-size: 1.5em;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.header p {
+    font-size: 0.85em;
+    opacity: 0.9;
+    margin: 0;
+}
+
+.header-right {
     display: flex;
     align-items: center;
     gap: 12px;
-    box-shadow: var(--shadow);
 }
-.header svg { flex-shrink: 0; }
-.header h1 { font-size: 18px; font-weight: 600; }
-.header .version {
-    font-size: 12px;
-    color: var(--color-text-muted);
-    margin-left: auto;
+
+/* Theme Toggle Button */
+.theme-toggle {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #ffffff;
+    font-size: 0.85em;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.theme-toggle svg {
+    width: 18px;
+    height: 18px;
+}
+
+.theme-toggle .sun-icon {
+    display: none;
+}
+
+.theme-toggle .moon-icon {
+    display: block;
+}
+
+[data-theme="dark"] .theme-toggle .sun-icon {
+    display: block;
+}
+
+[data-theme="dark"] .theme-toggle .moon-icon {
+    display: none;
 }
 
 .main {
     flex: 1;
-    max-width: 1200px;
     width: 100%;
     margin: 0 auto;
-    padding: 32px 24px;
+    padding: 32px 30px;
 }
 
 .footer {
-    text-align: center;
-    padding: 16px;
-    font-size: 12px;
-    color: var(--color-text-muted);
+    background: var(--color-surface);
     border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    padding: 20px;
+    text-align: center;
+    font-size: 0.85em;
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+[data-theme="dark"] .footer {
+    background: #0f172a;
+}
+
+.footer p {
+    margin: 4px 0;
+}
+
+.footer a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.footer a:hover {
+    text-decoration: underline;
 }
 
 /* ── State visibility ──────────────────────────────────────────────── */
@@ -127,11 +249,11 @@ body {
     text-align: center;
     cursor: pointer;
     transition: border-color 0.2s, background 0.2s;
-    background: var(--color-card);
+    background: var(--color-surface);
 }
 .dropzone:hover, .dropzone.dragover {
     border-color: var(--color-primary);
-    background: color-mix(in srgb, var(--color-primary) 5%, var(--color-card));
+    background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
 }
 .dropzone svg { margin-bottom: 16px; }
 .dropzone .drop-title {
@@ -165,7 +287,7 @@ body {
     padding: 6px 12px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
-    background: var(--color-card);
+    background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;
 }
@@ -176,10 +298,17 @@ body {
     font-size: 13px;
     color: var(--color-text-muted);
 }
+.privacy-note a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+.privacy-note a:hover {
+    text-decoration: underline;
+}
 
 /* ── Scanning state ────────────────────────────────────────────────── */
 .scan-info {
-    background: var(--color-card);
+    background: var(--color-surface);
     border-radius: var(--radius);
     padding: 32px;
     box-shadow: var(--shadow);
@@ -232,7 +361,7 @@ body {
     font-size: 14px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
-    background: var(--color-card);
+    background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;
 }
@@ -246,7 +375,7 @@ body {
     margin-bottom: 24px;
 }
 .summary-card {
-    background: var(--color-card);
+    background: var(--color-surface);
     border-radius: var(--radius);
     padding: 20px;
     box-shadow: var(--shadow);
@@ -269,7 +398,7 @@ body {
 
 /* ── PQC Breakdown ─────────────────────────────────────────────────── */
 .pqc-section {
-    background: var(--color-card);
+    background: var(--color-surface);
     border-radius: var(--radius);
     padding: 20px 24px;
     box-shadow: var(--shadow);
@@ -318,7 +447,7 @@ body {
 
 /* ── Component table ───────────────────────────────────────────────── */
 .table-section {
-    background: var(--color-card);
+    background: var(--color-surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     overflow: hidden;
@@ -342,7 +471,7 @@ body {
     font-size: 13px;
     border: 1px solid var(--color-border);
     border-radius: 4px;
-    background: var(--color-card);
+    background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
@@ -359,7 +488,7 @@ body {
     font-size: 13px;
     border: 1px solid var(--color-border);
     border-radius: 4px;
-    background: var(--color-card);
+    background: var(--color-surface);
     color: var(--color-text);
     min-width: 180px;
 }
@@ -398,7 +527,7 @@ td {
     border-bottom: 1px solid var(--color-border);
     white-space: nowrap;
 }
-tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--color-card)); }
+tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface)); }
 .pqc-badge {
     display: inline-block;
     padding: 2px 8px;
@@ -411,9 +540,7 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
 .pqc-badge-TRANSITIONAL { background: color-mix(in srgb, var(--color-transitional) 15%, transparent); color: #9a7b00; }
 .pqc-badge-UNSAFE { background: color-mix(in srgb, var(--color-unsafe) 15%, transparent); color: var(--color-unsafe); }
 .pqc-badge-DEPRECATED { background: color-mix(in srgb, var(--color-deprecated) 15%, transparent); color: var(--color-deprecated); }
-@media (prefers-color-scheme: dark) {
-    .pqc-badge-TRANSITIONAL { color: var(--color-transitional); }
-}
+[data-theme="dark"] .pqc-badge-TRANSITIONAL { color: var(--color-transitional); }
 
 .table-footer {
     padding: 10px 20px;
@@ -436,7 +563,7 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
     font-weight: 500;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
-    background: var(--color-card);
+    background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;
     transition: background 0.15s, box-shadow 0.15s;
@@ -451,7 +578,7 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
 
 /* ── Error state ───────────────────────────────────────────────────── */
 .error-box {
-    background: color-mix(in srgb, var(--color-unsafe) 8%, var(--color-card));
+    background: color-mix(in srgb, var(--color-unsafe) 8%, var(--color-surface));
     border: 1px solid var(--color-unsafe);
     border-radius: var(--radius);
     padding: 24px;
@@ -479,15 +606,36 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
 </head>
 <body>
 
+<div class="container">
+
 <!-- ── Header ──────────────────────────────────────────────────────── -->
-<header class="header">
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <rect width="28" height="28" rx="6" fill="#667eea"/>
-        <path d="M8 14 L12 18 L20 10" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <h1>CBOM Scanner</h1>
-    <span class="version">v1.9.4</span>
-</header>
+<div class="header">
+    <div class="header-left">
+        <svg class="header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" height="40">
+            <g transform="translate(12, 18)">
+                <path d="M 20 0 L 8 0 Q 4 0 4 4 L 4 60 Q 4 64 8 64 L 20 64" fill="none" stroke="white" stroke-width="4.5" stroke-linecap="round"/>
+                <path d="M 48 0 L 60 0 Q 64 0 64 4 L 64 60 Q 64 64 60 64 L 48 64" fill="none" stroke="white" stroke-width="4.5" stroke-linecap="round"/>
+                <circle cx="34" cy="32" r="9" fill="white"/>
+            </g>
+            <text x="95" y="62" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="44" font-weight="600" fill="white" letter-spacing="0.5">CipherIQ</text>
+        </svg>
+        <div class="header-title">
+            <h1>CBOM Scanner</h1>
+            <p>Cryptographic Bill of Materials Scanner</p>
+        </div>
+    </div>
+    <div class="header-right">
+        <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+            <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+            <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+            <span>Theme</span>
+        </button>
+    </div>
+</div>
 
 <!-- ── Main content ────────────────────────────────────────────────── -->
 <div class="main">
@@ -584,8 +732,44 @@ tr:hover td { background: color-mix(in srgb, var(--color-primary) 3%, var(--colo
 
 <!-- ── Footer ──────────────────────────────────────────────────────── -->
 <footer class="footer">
-    Powered by CipherIQ &middot; cbom-generator v1.9.4
+    <p>CBOM Scanner by <a href="https://cipheriq.io" target="_blank">CipherIQ</a> &middot; cbom-generator v1.9.4 &middot; Copyright &copy; 2025 Graziano Labs Corp.</p>
+    <p>Privacy-first: All processing happens in your browser. No data is sent to external servers.</p>
 </footer>
+
+</div><!-- /.container -->
+
+<!-- ── Theme Manager ───────────────────────────────────────────────── -->
+<script>
+class ThemeManager {
+    constructor() {
+        const saved = localStorage.getItem('cbom-scanner-theme');
+        if (saved) {
+            this.theme = saved;
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            this.theme = 'dark';
+        } else {
+            this.theme = 'light';
+        }
+        this.apply();
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('cbom-scanner-theme')) {
+                this.theme = e.matches ? 'dark' : 'light';
+                this.apply();
+            }
+        });
+    }
+    toggle() {
+        this.theme = this.theme === 'light' ? 'dark' : 'light';
+        localStorage.setItem('cbom-scanner-theme', this.theme);
+        this.apply();
+    }
+    apply() {
+        document.documentElement.setAttribute('data-theme', this.theme);
+    }
+}
+const themeManager = new ThemeManager();
+document.getElementById('theme-toggle').addEventListener('click', () => themeManager.toggle());
+</script>
 
 <!-- ── Application Script ──────────────────────────────────────────── -->
 <script type="module">
