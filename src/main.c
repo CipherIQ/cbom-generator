@@ -5597,6 +5597,15 @@ int generate_cyclonedx_cbom(asset_store_t *store, FILE *output) {
                     json_object_array_add(algo_properties, standards_prop);
                     
                     json_object_object_add(algo_component, "properties", algo_properties);
+
+                    // CycloneDX cryptoProperties (required for dashboard categorization)
+                    json_object *crypto_props = json_object_new_object();
+                    json_object_object_add(crypto_props, "assetType", json_object_new_string("algorithm"));
+                    json_object *algo_props = json_object_new_object();
+                    json_object_object_add(algo_props, "primitive", json_object_new_string("pk"));
+                    json_object_object_add(crypto_props, "algorithmProperties", algo_props);
+                    json_object_object_add(algo_component, "cryptoProperties", crypto_props);
+
                     json_object_array_add(components, algo_component);
                 }
             }
