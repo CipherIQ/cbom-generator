@@ -116,6 +116,10 @@ typedef struct {
     bool include_all_dependencies;      // Include ALL library dependencies (default: true since v1.8.6)
     char *rootfs_prefix;                // Rootfs prefix to strip from paths (v1.8 --rootfs-prefix)
     char *scan_profile;                 // Industry scan profile name or path (Pro feature)
+    char *report_type;                  // --report TYPE (fda-premarket, un-r155, iec-62443, supply-chain)
+    char *product_name;                 // --product-name STRING
+    char *product_version;              // --product-version STRING
+    char *manufacturer;                 // --manufacturer STRING
     char **plugin_whitelist;            // Plugin names to load (NULL = load all, set by scan profile)
     size_t plugin_whitelist_count;      // Number of whitelisted plugins
     bool plugin_config_only;            // Config-only mode: skip process/port detection (set by scan profile)

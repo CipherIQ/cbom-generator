@@ -176,6 +176,11 @@ static void print_usage(const char *program_name) {
     printf("Professional Options:\n");
     printf("      --profile NAME         Use industry scan profile (medical-device, automotive,\n");
     printf("                             industrial, telecom) or path to custom profile YAML\n");
+    printf("      --report TYPE          Generate compliance report (fda-premarket, un-r155,\n");
+    printf("                             iec-62443, supply-chain)\n");
+    printf("      --product-name NAME    Product name for compliance report\n");
+    printf("      --product-version VER  Product version for compliance report\n");
+    printf("      --manufacturer NAME    Manufacturer name for compliance report\n");
     printf("\n");
 #endif
     printf("  -h, --help                 Show this help message\n");
@@ -230,6 +235,10 @@ static int parse_arguments(int argc, char *argv[]) {
         {"yocto-manifest", required_argument, 0, 1022},
         {"rootfs-prefix", required_argument, 0, 1024},
         {"profile", required_argument, 0, 1025},
+        {"report", required_argument, 0, 1026},
+        {"product-name", required_argument, 0, 1027},
+        {"product-version", required_argument, 0, 1028},
+        {"manufacturer", required_argument, 0, 1029},
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0}
@@ -390,6 +399,30 @@ static int parse_arguments(int argc, char *argv[]) {
                     free(g_cbom_config.scan_profile);
                 }
                 g_cbom_config.scan_profile = strdup(optarg);
+                break;
+            case 1026: // --report
+                if (g_cbom_config.report_type) {
+                    free(g_cbom_config.report_type);
+                }
+                g_cbom_config.report_type = strdup(optarg);
+                break;
+            case 1027: // --product-name
+                if (g_cbom_config.product_name) {
+                    free(g_cbom_config.product_name);
+                }
+                g_cbom_config.product_name = strdup(optarg);
+                break;
+            case 1028: // --product-version
+                if (g_cbom_config.product_version) {
+                    free(g_cbom_config.product_version);
+                }
+                g_cbom_config.product_version = strdup(optarg);
+                break;
+            case 1029: // --manufacturer
+                if (g_cbom_config.manufacturer) {
+                    free(g_cbom_config.manufacturer);
+                }
+                g_cbom_config.manufacturer = strdup(optarg);
                 break;
             case 'h':
                 print_usage(argv[0]);
